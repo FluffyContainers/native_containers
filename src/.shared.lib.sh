@@ -172,7 +172,7 @@ __do_lib_upgrade() {
         local oldIFS="${IFS}"
         IFS=$'\n'; for line in $(curl -s ${_lib_download_uri}/download.diff); do 
             [[ "${line:0:1}" == "#" ]] && continue
-            handle_file "${_name}" "${line}"
+            handle_file "${APP_NAME}" "${line}"
         done
         IFS=${oldIFS}
         if [[ -f "${DIR}/.container.lib.sh" ]]; then

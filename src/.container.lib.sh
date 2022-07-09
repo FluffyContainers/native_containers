@@ -31,6 +31,7 @@ __dir(){
  echo -n "$(cd -P "$( dirname "${__source}" )" 1>/dev/null 2>&1 && pwd)"
 }
 DIR=$(__dir)
+APP_NAME=${BASH_SOURCE[1]}; APP_NAME=${APP_NAME##*/}; APP_NAME=${APP_NAME%.*}
 
 # Include configuration files
 . "${DIR}/.shared.lib.sh"
