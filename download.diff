@@ -1,0 +1,12 @@
+# Upgrade rules for the lib
+# =====================================
+# - remove file
+# + add file with replace
+# ? custom handling/do no replace file
+# c create new file/do no replace file
+- container.lib.sh
++ .shared.lib.sh
++ .container.lib.sh
+? .config
+? example.sh
+? .secrets

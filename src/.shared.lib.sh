@@ -15,11 +15,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# shellcheck disable=SC2155,SC2015
+# shellcheck disable=SC2155,SC1091,SC2015
 
-# DIR=${PWD:-$(pwd)}
+__dir(){
+ local __source="${BASH_SOURCE[0]}"
+ while [[ -h "${__source}" ]]; do
+   local __dir=$(cd -P "$( dirname "${__source}" )" 1>/dev/null 2>&1 && pwd)
+   local __source="$(readlink "${__source}")"
+   [[ ${__source} != /* ]] && local __source="${__dir}/${__source}"
+ done
+ echo -n "$(cd -P "$( dirname "${__source}" )" 1>/dev/null 2>&1 && pwd)"
+}
+DIR=$(__dir)
 
-DIR="${PWD:-$(pwd)}/temp"
 
 # =====================
 # 
@@ -82,8 +90,27 @@ __ask() {
 }
 
 
-LIB_DOWNLOAD_URI="https://raw.githubusercontent.com/FluffyContainers/native_containers/master"
-LIB_SOURCE_LOC="src"
+# =====================
+# 
+#  Upgrade functions
+#
+# =====================
+
+# https://stackoverflow.com/questions/4023830/how-to-compare-two-strings-in-dot-separated-version-format-in-bash
+# Results: 
+#          0 => =
+#          1 => >
+#          2 => <
+__vercomp () {
+    [[ "$1" == "$2" ]] && return 0 ; local IFS=. ; local i ver1=($1) ver2=($2)
+    for ((i=${#ver1[@]}; i<${#ver2[@]}; i++));  do ver1[i]=0;  done
+    for ((i=0; i<${#ver1[@]}; i++)); do
+        [[ -z ${ver2[i]} ]] && ver2[i]=0
+        ((10#${ver1[i]} > 10#${ver2[i]})) &&  return 1
+        ((10#${ver1[i]} < 10#${ver2[i]})) &&  return 2
+    done
+    return 0
+}
 
 handle_file(){
   IFS=" "
@@ -126,32 +153,32 @@ handle_file(){
   esac
 }
 
-install_script(){
-  local _name=${1}
+__do_lib_upgrade() {
+    local _lib_download_uri="https://raw.githubusercontent.com/FluffyContainers/native_containers/master"
+    local _lib_source_loc="src"
+    local _remote_ver="${1}"
+    
+    echo -en "You're about to use remote lib source \"${_COLOR[ERROR]}${_lib_download_uri}${_COLOR[RESET]}\". "
+    ! __ask "Agree to continue" && return 1
 
-  __echo "INFO" "Installation dir: ${DIR}..."
-  echo -en "You're about to use remote lib source \"${_COLOR[ERROR]}${LIB_DOWNLOAD_URI}${_COLOR[RESET]}\". "
-  ! __ask "Agree to continue" && return 1
+    local _remote_ver=$(curl "${_lib_download_uri}/version" 2>/dev/null)
+    [[ -z ${_remote_ver} ]] && { __echo "error" "Can't retrieve remote version"; exit 1; }
+    if ! __vercomp "${LIB_VERSION}" "${_remote_ver}"; then
+        echo "Current version ${LIB_VERSION} are installed, while ${_remote_ver} are available ..."
+        ! curl --output /dev/null --silent --head --fail "${_lib_download_uri}/download.diff" && { __echo "error" "Lib update list is not available at \"${_lib_download_uri}/download.diff\""; exit 1; }        
 
-  
-  local _remote_ver=$(curl -s ${LIB_DOWNLOAD_URI}/version)
-  local oldIFS=${IFS}
+        local oldIFS="${IFS}"
+        IFS=$'\n'; for line in $(curl -s ${_lib_download_uri}/download.diff); do 
+            [[ "${line:0:1}" == "#" ]] && continue
+            handle_file "${_name}" "${line}"
+        done
+        IFS=${oldIFS}
+        if [[ -f "${DIR}/.container.lib.sh" ]]; then
+            sed -i "s/LIB_VERSION=\"0.0.0\"/LIB_VERSION=\"${_remote_ver}\"/" "${DIR}/.container.lib.sh"
+        fi
 
-  [[ -z ${_remote_ver} ]] && { __echo "error" "Can't retrieve remote version"; exit 1; }
-
-  ! curl --output /dev/null --silent --head --fail "${LIB_DOWNLOAD_URI}/download.diff" && { __echo "error" "Lib update list is not available at \"${LIB_DOWNLOAD_URI}/download.diff\""; exit 1; }
-
-  IFS=$'\n'; for line in $(curl -s ${LIB_DOWNLOAD_URI}/download.diff); do 
-    [[ "${line:0:1}" == "#" ]] && continue
-    handle_file "${_name}" "${line}"
-  done
-  IFS=${oldIFS}
-
-  if [[ -f "${DIR}/.container.lib.sh" ]]; then
-    sed -i "s/LIB_VERSION=\"0.0.0\"/LIB_VERSION=\"${_remote_ver}\"/" "${DIR}/.container.lib.sh"
-  fi
-  __echo "info" "Deployment done."
+        __echo "Upgrade done, please referer to ${_lib_download_uri}/src/.config for new available conf options"
+    else 
+        __echo "Lib is already up to date"
+    fi
 }
-
-__MY_SCRIPT_NAME="${1}"; [[ -z "${__MY_SCRIPT_NAME}" ]] && { __echo "error" "No input script name provided"; exit 1; }
-install_script "${__MY_SCRIPT_NAME}"

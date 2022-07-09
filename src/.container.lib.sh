@@ -1,13 +1,19 @@
 #!/bin/bash
 
-# The script is provided as-is with no responsibility
-#
-# The current LICENSE header should be preserved in
-# all future copies of the script including original
-# author and mail.
-# 
-# Author: simca
-# Mail  : me at nxa dot io
+# Copyright 2022 FluffyContainers
+# GitHub: https://github.com/FluffyContainers
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 # shellcheck disable=SC2155,SC1091,SC2015
 
@@ -16,64 +22,18 @@ PATH=${PATH}:/usr/bin
 __DEBUG=0
 
 __dir(){
- local SOURCE="${BASH_SOURCE[0]}"
- while [[ -h "$SOURCE" ]]; do
-   local DIR=$(cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd)
-   local SOURCE="$(readlink "$SOURCE")"
-   [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+ local __source="${BASH_SOURCE[0]}"
+ while [[ -h "${__source}" ]]; do
+   local __dir=$(cd -P "$( dirname "${__source}" )" 1>/dev/null 2>&1 && pwd)
+   local __source="$(readlink "${__source}")"
+   [[ ${__source} != /* ]] && local __source="${__dir}/${__source}"
  done
- # shellcheck disable=SC2046
- echo -n $(cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd)
+ echo -n "$(cd -P "$( dirname "${__source}" )" 1>/dev/null 2>&1 && pwd)"
 }
-
 DIR=$(__dir)
 
-declare -A _COLOR=(
-  [INFO]="\033[38;05;39m"
-  [ERROR]="\033[38;05;161m"
-  [WARN]="\033[38;05;178m"
-  [OK]="\033[38;05;40m"
-  [GRAY]="\033[38;05;245m"
-  [RESET]="\033[m"
-)
-
-
-__command(){
-  local title="$1"
-  local status="$2"  # 0 or 1
-  shift;shift
-
-  [[ "${__DEBUG}" -eq 1 ]] && echo "${_COLOR[INFO]}[CMD-DBG] ${_COLOR[GRAY]} $* ${_COLOR[RESET]}"
-
-  if [[ ${status} -eq 1 ]]; then
-    echo -n "${title}..."
-    "$@" 1>/dev/null 2>&1
-    local n=$?
-    [[ $n -eq 0 ]] && echo -e "${_COLOR[OK]}ok${_COLOR[RESET]}" || echo -e "${_COLOR[ERROR]}fail[#${n}]${_COLOR[RESET]}"
-    return ${n}
-  else
-   echo "${title}..."
-    "$@"
-    return $?
-  fi
-}
-
-__run(){
- echo -ne "${_COLOR[INFO]}[EXEC] ${_COLOR[GRAY]}$* -> ["
- "$@" 1>/dev/null 2>/dev/null
- local n=$?
- [[ $n -eq 0 ]] && echo -e "${_COLOR[OK]}ok${_COLOR[GRAY]}]${_COLOR[RESET]}" || echo -e "${_COLOR[ERROR]}fail[#${n}]${_COLOR[GRAY]}]${_COLOR[RESET]}"
- return ${n}
-}
-
-__echo() {
- local _lvl="INFO"
- [[ "${1^^}" == "INFO" ]] || [[ "${1^^}" == "ERROR" ]] || [[ "${1^^}" == "WARN" ]] && { local _lvl=${1^^}; shift; }
- 
- echo -e "${_COLOR[${_lvl}]}[${_lvl}]${_COLOR[RESET]} $*"
-}
-
 # Include configuration files
+. "${DIR}/.shared.lib.sh"
 [[ -f "${DIR}/.secrets" ]] && { . "${DIR}/.secrets"; __echo "Including secrets..."; }
 . "${DIR}/.config"
 
@@ -460,47 +420,6 @@ else
 fi
 }
 
-
-# https://stackoverflow.com/questions/4023830/how-to-compare-two-strings-in-dot-separated-version-format-in-bash
-# Results: 
-#          0 => =
-#          1 => >
-#          2 => <
-__vercomp () {
-    [[ "$1" == "$2" ]] && return 0 ; local IFS=. ; local i ver1=($1) ver2=($2)
-    for ((i=${#ver1[@]}; i<${#ver2[@]}; i++));  do ver1[i]=0;  done
-    for ((i=0; i<${#ver1[@]}; i++)); do
-        [[ -z ${ver2[i]} ]] && ver2[i]=0
-        ((10#${ver1[i]} > 10#${ver2[i]})) &&  return 1
-        ((10#${ver1[i]} < 10#${ver2[i]})) &&  return 2
-    done
-    return 0
-}
-
-upgrade_lib(){
-  local _remote_ver=$(curl https://raw.githubusercontent.com/FluffyContainers/native_containers/master/version 2>/dev/null)
-  
-  if ! __vercomp "${LIB_VERSION}" "${_remote_ver}"; then
-   echo "Current version ${LIB_VERSION} are installed, while ${_remote_ver} are available"
-   read -rep "Confirm upgrade (y/N): " answer
-   if [[ "${answer}" != "y" ]]; then
-    echo "Upgrade cancelled by user"
-    return
-   fi
-   curl https://raw.githubusercontent.com/FluffyContainers/native_containers/master/src/container.lib.sh -o "${DIR}/container.lib.sh" 2>/dev/null
-   sed -i "s/LIB_VERSION=\"0.0.0\"/LIB_VERSION=\"${_remote_ver}\"/" "${DIR}/container.lib.sh"
-
-  if [[ ! -f "${DIR}/.config" ]]; then
-    echo "Downloading default configuration file"
-    curl https://raw.githubusercontent.com/hapylestat/native_container_app/master/src/.config -o "${DIR}/.config" 2>/dev/null
-  fi
-
-   echo "Upgrade done, please referer to https://raw.githubusercontent.com/FluffyContainers/native_containers/master/src/.config for new available conf options"
-  else 
-    echo "Lib is up to date"
-  fi
-}
-
 show_help(){
   local -n commands=$1
   local -n flags=$2
@@ -530,7 +449,7 @@ declare -A COMMANDS=(
  [STOP,S]=0   [STOP,F]="do_stop"
  [LOGS,S]=0   [LOGS,F]="do_logs"
  [SSH,S]=0    [SSH,F]="do_ssh"
- [UPDATE,S]=0 [UPDATE,F]="upgrade_lib"
+ [UPDATE,S]=0 [UPDATE,F]="__do_lib_upgrade"
 )
 
 declare -A FLAGS=(
