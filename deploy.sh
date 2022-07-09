@@ -17,9 +17,7 @@
 
 # shellcheck disable=SC2155,SC2015
 
-# DIR=${PWD:-$(pwd)}
-
-DIR="${PWD:-$(pwd)}/temp"
+DIR=${PWD:-$(pwd)}
 
 # =====================
 # 
