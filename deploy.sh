@@ -73,7 +73,7 @@ __echo() {
 
 __ask() {
     local _title="${1}"
-    read -rep "${1} (y/N): " answer
+    read -rep "${1} (y/N): " answer < /dev/tty
     if [[ "${answer}" != "y" ]]; then
       __echo "error" "Action cancelled by the user"
       return 1
