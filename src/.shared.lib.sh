@@ -184,3 +184,64 @@ __do_lib_upgrade() {
         __echo "Lib is already up to date"
     fi
 }
+
+
+# ========================= NVIDIA Integration
+_add_nvidia_mounts(){
+  if [[ ! -f /usr/bin/nvidia-container-cli ]]; then 
+    echo "Please install libnvidia-container tools: "
+    echo "   - https://github.com/NVIDIA/libnvidia-container"
+    echo "   - https://nvidia.github.io/libnvidia-container/"
+    exit 1
+  fi
+  local _args="--cap-add=ALL" # required 
+  local _driver_version=$(nvidia-container-cli info|grep "NVRM"|awk -F ':' '{print $2}'|tr -d ' ')
+
+  for _dev in /dev/nvidia*; do 
+    local _args="${_args} --device ${_dev}"
+  done 
+  
+  for item in $(nvidia-container-cli list|grep -v "dev"); do 
+    if [[ ${item} == *".so"* ]]; then
+      local _path_nover=${item%".${_driver_version}"}
+      local _args="${_args} -v ${item}:${item}:ro -v ${item}:${_path_nover}:ro -v ${item}:${_path_nover}.1:ro"
+    else 
+      local _args="${_args} -v ${item}:${item}:ro"
+    fi
+  done
+
+  [[ -d /dev/dri ]] &&  local _args="${_args} -v /dev/dri:/dev/dri" || true
+
+  echo -n "${_args}"
+}
+
+_nvidia_cuda_init(){
+  # https://askubuntu.com/questions/590319/how-do-i-enable-automatically-nvidia-uvm
+  # https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#runfile-verifications
+
+  if /sbin/modprobe nvidia; then
+    # Count the number of NVIDIA controllers found.
+    NVDEVS=$(lspci | grep -i NVIDIA)
+    N3D=$(echo "$NVDEVS" | grep -c "3D controller")
+    NVGA=$(echo "$NVDEVS" | grep -c "VGA compatible controller")
+
+    N=$((N3D + NVGA - 1))
+    for i in $(seq 0 $N); do
+      mknod -m 666 "/dev/nvidia$i" c 195 "$i" 1>/dev/null 2>&1
+    done
+
+    mknod -m 666 /dev/nvidiactl c 195 255 1>/dev/null 2>&1
+  else
+    return 1
+  fi
+
+  if /sbin/modprobe nvidia-uvm; then
+    # Find out the major device number used by the nvidia-uvm driver
+    D=$(grep nvidia-uvm /proc/devices | awk '{print $1}')
+
+    mknod -m 666 /dev/nvidia-uvm c "${D}" 0 1>/dev/null 2>&1
+  else
+    return 1
+  fi
+  return 0
+}

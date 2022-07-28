@@ -49,6 +49,7 @@ ATTACH_NVIDIA=${ATTACH_NVIDIA:-0}
 CONTAINER_CAPS=${CONTAINER_CAPS:-}
 CAPS_PRIVILEGED=${CAPS_PRIVILEGED:0}
 BUILD_ARGS=${BUILD_ARGS:-}
+DEVICES=${DEVICES:-}
 
 NS_USER=${NS_USER:-containers}
 declare -A LIMITS=${LIMITS:([CPU]="0.0" [MEMORY]=0)}
@@ -89,65 +90,6 @@ verify_requested_resources(){
   [[ ${is_error} -eq 1 ]] && exit 1
 }
 
-_add_nvidia_mounts(){
-  if [[ ! -f /usr/bin/nvidia-container-cli ]]; then 
-    echo "Please install libnvidia-container tools: "
-    echo "   - https://github.com/NVIDIA/libnvidia-container"
-    echo "   - https://nvidia.github.io/libnvidia-container/"
-    exit 1
-  fi
-  local _args="--cap-add=ALL" # required 
-  local _driver_version=$(nvidia-container-cli info|grep "NVRM"|awk -F ':' '{print $2}'|tr -d ' ')
-
-  for _dev in /dev/nvidia*; do 
-    local _args="${_args} --device ${_dev}"
-  done 
-  
-  for item in $(nvidia-container-cli list|grep -v "dev"); do 
-    if [[ ${item} == *".so"* ]]; then
-      local _path_nover=${item%".${_driver_version}"}
-      local _args="${_args} -v ${item}:${item}:ro -v ${item}:${_path_nover}:ro -v ${item}:${_path_nover}.1:ro"
-    else 
-      local _args="${_args} -v ${item}:${item}:ro"
-    fi
-  done
-
-  [[ -d /dev/dri ]] &&  local _args="${_args} -v /dev/dri:/dev/dri" || true
-
-  echo -n "${_args}"
-}
-
-_nvidia_cuda_init(){
-  # https://askubuntu.com/questions/590319/how-do-i-enable-automatically-nvidia-uvm
-  # https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#runfile-verifications
-
-  if /sbin/modprobe nvidia; then
-    # Count the number of NVIDIA controllers found.
-    NVDEVS=$(lspci | grep -i NVIDIA)
-    N3D=$(echo "$NVDEVS" | grep -c "3D controller")
-    NVGA=$(echo "$NVDEVS" | grep -c "VGA compatible controller")
-
-    N=$((N3D + NVGA - 1))
-    for i in $(seq 0 $N); do
-      mknod -m 666 "/dev/nvidia$i" c 195 "$i" 1>/dev/null 2>&1
-    done
-
-    mknod -m 666 /dev/nvidiactl c 195 255 1>/dev/null 2>&1
-  else
-    return 1
-  fi
-
-  if /sbin/modprobe nvidia-uvm; then
-    # Find out the major device number used by the nvidia-uvm driver
-    D=$(grep nvidia-uvm /proc/devices | awk '{print $1}')
-
-    mknod -m 666 /dev/nvidia-uvm c "${D}" 0 1>/dev/null 2>&1
-  else
-    return 1
-  fi
-  return 0
-}
-
 do_start() {
  local -n flags=$1
  local ver=${FLAGS[VER]}
@@ -155,6 +97,7 @@ do_start() {
  local attach=${FLAGS[ATTACH]}
  local interactive=${FLAGS[INTERACTIVE]}
  local volumes=""
+ local devices=""
  local envi=""
  local lxcfs_mounts=""
  local limits_mem=""
@@ -193,6 +136,13 @@ do_start() {
    local volumes="${volumes}-v ${_src_dir}:${share[1]} "; echo " - ${_src_dir} => ${share[1]}"
  done
  
+ echo "Container devices:"
+ for v in "${DEVICES[@]}"; do
+   # shellcheck disable=SC2206
+   [[ "${v}" == "" ]] && { echo " - no devices"; continue; }
+   local devices="${devices}--device ${v} "; echo " - ${v}"
+ done
+
  echo "Environment variables:"
  for v in "${ENVIRONMENT[@]}"; do
    # shellcheck disable=SC2206
@@ -250,6 +200,7 @@ do_start() {
   --name ${APPLICATION}\
   --hostname ${APPLICATION}\
   ${caps}\
+  ${devices}\
   ${options}\
   ${_net_argument}\
   ${lxcfs_mounts}\
