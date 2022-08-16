@@ -158,7 +158,7 @@ handle_file(){
 __do_lib_upgrade() {
     local _lib_download_uri="https://raw.githubusercontent.com/FluffyContainers/native_containers/master"
     local _lib_source_loc="src"
-    local _remote_ver="${1}"
+    local _remote_ver=""
     
     echo -en "You're about to use remote lib source \"${_COLOR[ERROR]}${_lib_download_uri}${_COLOR[RESET]}\". "
     ! __ask "Agree to continue" && return 1

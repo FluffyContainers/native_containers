@@ -46,6 +46,7 @@ ENVIRONMENT=${ENVIRONMENT:-}
 CMD=${CMD:-}                   
 IP=${IP:-}
 ATTACH_NVIDIA=${ATTACH_NVIDIA:-0}
+ATTACH_SYSTEMD=${ATTACH_SYSTEMD:-0}
 CONTAINER_CAPS=${CONTAINER_CAPS:-}
 CAPS_PRIVILEGED=${CAPS_PRIVILEGED:0}
 BUILD_ARGS=${BUILD_ARGS:-}
@@ -103,6 +104,8 @@ do_start() {
  local limits_mem=""
  local limits_cpu=""
  local nvidia_args=""
+ local bin_options=""
+ local custom_container_command=""
  local caps=""
 
  [[ ${clean} -eq 1 ]] && [[ ${attach} -eq 1 ]] && { echo "[E] -c and -a options cannot be used together!"; return; }
@@ -123,6 +126,19 @@ do_start() {
 
  echo "LXS-FS extension is installed: "
  [[ "${IS_LXCFS_ENABLED}" -eq 1 ]] && { local lxcfs_mounts=${LXC_FS_OPTS[*]}; echo "- YES"; } || { echo "- NO"; }
+
+ echo "SystemD enabled container:"
+ if [[ ${ATTACH_SYSTEMD} -eq 1 ]]; then 
+   echo "- yes"
+   CONTAINER_CAPS+=("SYS_ADMIN")
+   VOLUMES+=("/sys/fs/cgroup:/sys/fs/cgroup:rw")
+   VOLUMES+=("$(mktemp -d):/run")
+   ENVIRONMENT+=("container=docker")
+   local bin_options="${bin_options}--cgroupns=host --entrypoint= "
+   local custom_container_command="/usr/sbin/init"
+ else  
+   echo "- no"
+ fi
 
  echo "Container volumes:"
  for v in "${VOLUMES[@]}"; do
@@ -186,12 +202,12 @@ do_start() {
  fi
 
  if [[ "${action}" == "start" ]]; then  
-   [[ ${attach} -eq 1 ]] && local option="-a"  || local option=""
+   [[ ${attach} -eq 1 ]] && local _option="-a"  || local _option=""
    [[ ${attach} == 0 ]] && local _silent=1 || local _silent=0 # flip attach value and store to _silent
-   __command "[!] Starting container..." ${_silent} ${CONTAINER_BIN} start "${option}" "${APPLICATION}"
+   __command "[!] Starting container..." ${_silent} ${CONTAINER_BIN} start "${_option}" "${APPLICATION}"
  else 
-   [[ ${interactive} -eq 1 ]] && { local action="run"; local options="-it --entrypoint=bash"; echo "[i] Interactive run..."; } || { local action="run"; local options="-d"; }
-   [[ ${attach} -eq 1 ]] && { local action="create"; local options=""; }
+   [[ ${interactive} -eq 1 ]] && { local action="run"; local it_options="-it --entrypoint=bash"; echo "[i] Interactive run..."; } || { local action="run"; local it_options="-d"; }
+   [[ ${attach} -eq 1 ]] && { local action="create"; local it_options=""; }
 
    # shellcheck disable=SC2086
   __command "[!] Creating and starting container..." 0 \
@@ -201,13 +217,14 @@ do_start() {
   --hostname ${APPLICATION}\
   ${caps}\
   ${devices}\
-  ${options}\
+  ${it_options}\
+  ${bin_options}\
   ${_net_argument}\
   ${lxcfs_mounts}\
   ${envi}\
   ${volumes}\
   ${nvidia_args}\
-  localhost/${APPLICATION}:${ver}
+  localhost/${APPLICATION}:${ver} "${custom_container_command}"
 
 
   [[ ${attach} -eq 1 ]] && ${CONTAINER_BIN} start -a "${APPLICATION}"
@@ -222,15 +239,24 @@ do_stop() {
 }
 
 do_logs() {
- ${CONTAINER_BIN} logs "${APPLICATION}"
+  local -n flags=$1
+  local _options=""
+
+  [[ ${flags[FOLLOW]} -eq 1 ]] && local _options="-f"
+
+  ${CONTAINER_BIN} logs ${_options} "${APPLICATION}"
 }
 
 do_ssh() {
   ${CONTAINER_BIN} exec -it "${APPLICATION}" bash 2>/dev/null
 
-  if [[ $? -ne 0 ]]; then
+  if [[ $? -eq 127 ]]; then # e.g. command not found
     ${CONTAINER_BIN} exec -it "${APPLICATION}" sh 
   fi
+}
+
+do_top() {
+  ${CONTAINER_BIN} stats "${APPLICATION}"
 }
 
 do_build() {
@@ -240,7 +266,7 @@ do_build() {
   local _build_args=""
 
   if [[ ${_clean_flag} -eq 1 ]]; then
-    local _build_args+="--rm --force-rm "
+    local _build_args+="--rm --force-rm --no-cache --pull-always"
     if ${CONTAINER_BIN} image exists "localhost/${APPLICATION}:${ver}"; then
       __command "Removing already existing \"localhost/${APPLICATION}:${ver}\" ..." 1 ${CONTAINER_BIN} rmi -if "localhost/${APPLICATION}:${ver}"
     fi
@@ -293,6 +319,8 @@ FROM fedora:latest
 
 ARG APP_VER
 ENV APP_VER=\${APP_VER:-}
+
+STOPSIGNAL SIGRTMIN+3
 
 RUN dnf install -y curl &&\\
 #    ....packages to install here.......
@@ -395,10 +423,11 @@ show_help(){
 
 #=============================================
 declare -A COMMANDS=(
- [INIT,S]=0   [INIT,F]="do_init"
- [BUILD,S]=0  [BUILD,F]="do_build"
- [START,S]=0  [START,F]="do_start"
+ [INIT,S]=0   [INIT,F]="do_init"    
+ [BUILD,S]=0  [BUILD,F]="do_build"          
+ [START,S]=0  [START,F]="do_start"          
  [STOP,S]=0   [STOP,F]="do_stop"
+ [TOP,S]=0    [TOP,F]="do_top"
  [LOGS,S]=0   [LOGS,F]="do_logs"
  [SSH,S]=0    [SSH,F]="do_ssh"
  [UPDATE,S]=0 [UPDATE,F]="__do_lib_upgrade"
@@ -408,6 +437,7 @@ declare -A FLAGS=(
  [CLEAN]=0       [-C]=CLEAN         [--CLEAN]=CLEAN
  [ATTACH]=0      [-A]=ATTACH        [--ATTACH]=ATTACH
  [INTERACTIVE]=0 [-IT]=INTERACTIVE  [--INTERACTIVE]=INTERACTIVE
+ [FOLLOW]=0      [-F]=FOLLOW        [--FOLLOW]=FOLLOW
  [VER]=${VER} 
 )
 
