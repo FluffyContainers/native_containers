@@ -132,7 +132,8 @@ do_start() {
    echo "- yes"
    CONTAINER_CAPS+=("SYS_ADMIN")
    VOLUMES+=("/sys/fs/cgroup:/sys/fs/cgroup:rw")
-   VOLUMES+=("$(mktemp -d):/run")
+   # ToDo: Add this only for ubuntu/debian
+   #VOLUMES+=("$(mktemp -d):/run")
    ENVIRONMENT+=("container=docker")
    local bin_options="${bin_options}--cgroupns=host --entrypoint= "
    local custom_container_command="/usr/sbin/init"
