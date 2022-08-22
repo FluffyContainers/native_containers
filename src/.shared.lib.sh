@@ -18,13 +18,13 @@
 # shellcheck disable=SC2155,SC1091,SC2015
 
 __dir(){
- local __source="${BASH_SOURCE[0]}"
- while [[ -h "${__source}" ]]; do
-   local __dir=$(cd -P "$( dirname "${__source}" )" 1>/dev/null 2>&1 && pwd)
-   local __source="$(readlink "${__source}")"
-   [[ ${__source} != /* ]] && local __source="${__dir}/${__source}"
- done
- echo -n "$(cd -P "$( dirname "${__source}" )" 1>/dev/null 2>&1 && pwd)"
+  local __source="${BASH_SOURCE[0]}"
+  while [[ -h "${__source}" ]]; do
+    local __dir=$(cd -P "$( dirname "${__source}" )" 1>/dev/null 2>&1 && pwd)
+    local __source="$(readlink "${__source}")"
+    [[ ${__source} != /* ]] && local __source="${__dir}/${__source}"
+  done
+  echo -n "$(cd -P "$( dirname "${__source}" )" 1>/dev/null 2>&1 && pwd)"
 }
 DIR=$(__dir)
 
@@ -58,25 +58,28 @@ __command(){
     [[ $n -eq 0 ]] && echo -e "${_COLOR[OK]}ok${_COLOR[RESET]}" || echo -e "${_COLOR[ERROR]}fail[#${n}]${_COLOR[RESET]}"
     return ${n}
   else
-   echo "${title}..."
+    echo "${title}..."
     "$@"
     return $?
   fi
 }
 
 __run(){
- echo -ne "${_COLOR[INFO]}[EXEC] ${_COLOR[GRAY]}$* -> ["
- "$@" 1>/dev/null 2>/dev/null
- local n=$?
- [[ $n -eq 0 ]] && echo -e "${_COLOR[OK]}ok${_COLOR[GRAY]}]${_COLOR[RESET]}" || echo -e "${_COLOR[ERROR]}fail[#${n}]${_COLOR[GRAY]}]${_COLOR[RESET]}"
- return ${n}
+  echo -ne "${_COLOR[INFO]}[EXEC] ${_COLOR[GRAY]}$* -> ["
+  "$@" 1>/dev/null 2>/dev/null
+  local n=$?
+  [[ $n -eq 0 ]] && echo -e "${_COLOR[OK]}ok${_COLOR[GRAY]}]${_COLOR[RESET]}" || echo -e "${_COLOR[ERROR]}fail[#${n}]${_COLOR[GRAY]}]${_COLOR[RESET]}"
+  return ${n}
 }
 
 __echo() {
- local _lvl="INFO"
- [[ "${1^^}" == "INFO" ]] || [[ "${1^^}" == "ERROR" ]] || [[ "${1^^}" == "WARN" ]] && { local _lvl=${1^^}; shift; }
- 
- echo -e "${_COLOR[${_lvl}]}[${_lvl}]${_COLOR[RESET]} $*"
+  local _lvl="INFO"
+  local _new_line=""
+
+  [[ "${1^^}" == "-N" ]] && { local _new_line="n"; shift; }
+  [[ "${1^^}" == "INFO" ]] || [[ "${1^^}" == "ERROR" ]] || [[ "${1^^}" == "WARN" ]] && { local _lvl=${1^^}; shift; }
+  
+  echo -${_new_line}e "${_COLOR[${_lvl}]}[${_lvl}]${_COLOR[RESET]} $*"
 }
 
 __ask() {
@@ -89,6 +92,25 @@ __ask() {
     return 0
 }
 
+__download(){
+  [[ "${1^^}" == "-L" ]] && { local _follow_link="-L"; shift; } || local _follow_link=""
+  local _url="$1"
+  local _file="${_url##*/}"
+  [[ -z $2 ]] && local _destination="./" || local _destination="$2"
+
+  __echo "Downloading file ${_file}: "
+  curl -f "${_follow_link}" --progress-bar "${_url}" -o "${_destination}/${_file}" 2>&1
+  local _ret=$?
+
+  [[ ${_ret} -eq 0 ]] && {
+    tput cuu1; echo -ne "\033[0K\r"; tput cuu1
+    __echo "Downloading file ${_file}: [${_COLOR[OK]}OK${_COLOR[RESET]}]"
+  } || {
+    tput cuu1; echo -ne "\033[0K\r"; tput cuu1;echo -ne "\033[0K\r"; tput cuu1;
+    __echo "Downloading file ${_file}: [${_COLOR[ERROR]}ERROR ${_ret}${_COLOR[RESET]}]"
+  }
+  return ${_ret} 
+}
 
 # =====================
 # 
@@ -123,7 +145,7 @@ handle_file(){
 
   case ${_command} in 
   -)
-   [[ ! -f "${DIR}/${_file}" ]] &&  __echo "INFO" "Skipping ${_file} removal as file doesn't exists"  || __run rm -f "${DIR}/${_file}";;
+    [[ ! -f "${DIR}/${_file}" ]] &&  __echo "INFO" "Skipping ${_file} removal as file doesn't exists"  || __run rm -f "${DIR}/${_file}";;
   +)
     local _http_code=$(curl -s "${_lib_download_uri}/${_lib_source_loc}/${_file}" -o "${DIR}/${_file}" --write-out "%{http_code}")
     if [[ ${_http_code} -lt 200 ]] || [[ ${_http_code} -gt 299 ]]; then 
@@ -142,10 +164,10 @@ handle_file(){
     else  
       local _http_code=$(curl -s "${_lib_download_uri}/${_lib_source_loc}/${_file}" -o "${DIR}/${_file}" --write-out "%{http_code}")
       [[ ${_http_code} -lt 200 ]] || [[ ${_http_code} -gt 299 ]] && __echo "error" "Failed to download file \"${_file}\": HTTP ${_http_code}" || {
-         [[ "${_file}" == "example.sh" ]] && {
+          [[ "${_file}" == "example.sh" ]] && {
           __run mv "${DIR}/${_file}" "${DIR}/${_name}.sh"
           __run chmod +x "${DIR}/${_name}.sh" 
-         }
+          }
         __echo "info" "Downloaded \"${_file}\" ... OK"
       }
     fi

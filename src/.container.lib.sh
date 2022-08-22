@@ -22,13 +22,13 @@ PATH=${PATH}:/usr/bin
 __DEBUG=0
 
 __dir(){
- local __source="${BASH_SOURCE[0]}"
- while [[ -h "${__source}" ]]; do
-   local __dir=$(cd -P "$( dirname "${__source}" )" 1>/dev/null 2>&1 && pwd)
-   local __source="$(readlink "${__source}")"
-   [[ ${__source} != /* ]] && local __source="${__dir}/${__source}"
- done
- echo -n "$(cd -P "$( dirname "${__source}" )" 1>/dev/null 2>&1 && pwd)"
+  local __source="${BASH_SOURCE[0]}"
+  while [[ -h "${__source}" ]]; do
+    local __dir=$(cd -P "$( dirname "${__source}" )" 1>/dev/null 2>&1 && pwd)
+    local __source="$(readlink "${__source}")"
+    [[ ${__source} != /* ]] && local __source="${__dir}/${__source}"
+  done
+  echo -n "$(cd -P "$( dirname "${__source}" )" 1>/dev/null 2>&1 && pwd)"
 }
 DIR=$(__dir)
 APP_NAME=${BASH_SOURCE[1]}; APP_NAME=${APP_NAME##*/}; APP_NAME=${APP_NAME%.*}
@@ -92,125 +92,127 @@ verify_requested_resources(){
 }
 
 do_start() {
- local -n flags=$1
- local ver=${FLAGS[VER]}
- local clean=${FLAGS[CLEAN]}
- local attach=${FLAGS[ATTACH]}
- local interactive=${FLAGS[INTERACTIVE]}
- local volumes=""
- local devices=""
- local envi=""
- local lxcfs_mounts=""
- local limits_mem=""
- local limits_cpu=""
- local nvidia_args=""
- local bin_options=""
- local custom_container_command=""
- local caps=""
+  local -n flags=$1
+  local ver=${FLAGS[VER]}
+  local clean=${FLAGS[CLEAN]}
+  local attach=${FLAGS[ATTACH]}
+  local interactive=${FLAGS[INTERACTIVE]}
+  local volumes=""
+  local devices=""
+  local envi=""
+  local lxcfs_mounts=""
+  local limits_mem=""
+  local limits_cpu=""
+  local nvidia_args=""
+  local bin_options=""
+  local custom_container_command=""
+  local caps=""
 
- [[ ${clean} -eq 1 ]] && [[ ${attach} -eq 1 ]] && { echo "[E] -c and -a options cannot be used together!"; return; }
+  [[ ${clean} -eq 1 ]] && [[ ${attach} -eq 1 ]] && { echo "[E] -c and -a options cannot be used together!"; return; }
 
- [[ ATTACH_NVIDIA -eq 1 ]] && { __command "[i] Initializing CUDA" 1 _nvidia_cuda_init; local nvidia_args=$(_add_nvidia_mounts); echo "[i] Attaching NVIDIA stuff to container..."; } || echo -n
+  [[ ATTACH_NVIDIA -eq 1 ]] && { __command "[i] Initializing CUDA" 1 _nvidia_cuda_init; local nvidia_args=$(_add_nvidia_mounts); echo "[i] Attaching NVIDIA stuff to container..."; } || echo -n
 
- verify_requested_resources
- if [[ ${LIMITS[CPU]%.*} -ne 0 ]]; then 
-  local total_cores=$(($(nproc) - 1))
-  local min_core=$((total_cores - LIMITS[CPU] - 1))
-  local limits_cpu="--cpuset-cpus=${min_core}-${total_cores}"; echo -e "CPU cores set:\n- ${min_core}-${total_cores}"
- fi
+  verify_requested_resources
+  if [[ ${LIMITS[CPU]%.*} -ne 0 ]]; then 
+    local total_cores=$(($(nproc) - 1))
+    local min_core=$((total_cores - LIMITS[CPU] - 1))
+    local limits_cpu="--cpuset-cpus=${min_core}-${total_cores}"; echo -e "CPU cores set:\n- ${min_core}-${total_cores}"
+  fi
 
- if [[ ${LIMITS[CPU]%.*} -ne 0 ]]; then 
-  echo -e "MEMORY limits:\n- ${LIMITS[MEMORY]}"
-  local limits_mem="--memory=${LIMITS[MEMORY]}G"
- fi
+  if [[ ${LIMITS[CPU]%.*} -ne 0 ]]; then 
+    echo -e "MEMORY limits:\n- ${LIMITS[MEMORY]}"
+    local limits_mem="--memory=${LIMITS[MEMORY]}G"
+  fi
 
- echo "LXS-FS extension is installed: "
- [[ "${IS_LXCFS_ENABLED}" -eq 1 ]] && { local lxcfs_mounts=${LXC_FS_OPTS[*]}; echo "- YES"; } || { echo "- NO"; }
+  echo "LXS-FS extension is installed: "
+  [[ "${IS_LXCFS_ENABLED}" -eq 1 ]] && { local lxcfs_mounts=${LXC_FS_OPTS[*]}; echo "- YES"; } || { echo "- NO"; }
 
- echo "SystemD enabled container:"
- if [[ ${ATTACH_SYSTEMD} -eq 1 ]]; then 
-   echo "- yes"
-   CONTAINER_CAPS+=("SYS_ADMIN")
-   VOLUMES+=("/sys/fs/cgroup:/sys/fs/cgroup:rw")
-   # ToDo: Add this only for ubuntu/debian
-   #VOLUMES+=("$(mktemp -d):/run")
-   ENVIRONMENT+=("container=docker")
-   local bin_options="${bin_options}--cgroupns=host --entrypoint= "
-   local custom_container_command="/usr/sbin/init"
- else  
-   echo "- no"
- fi
+  echo "SystemD enabled container:"
+  if [[ ${ATTACH_SYSTEMD} -eq 1 ]]; then 
+    echo "- yes"
+    CONTAINER_CAPS+=("SYS_ADMIN")
+    VOLUMES+=("/sys/fs/cgroup:/sys/fs/cgroup:rw")
+    # ToDo: Add this only for ubuntu/debian
+    #VOLUMES+=("$(mktemp -d):/run")
+    ENVIRONMENT+=("container=docker")
+    local bin_options="${bin_options}--cgroupns=host --entrypoint= "
+    local custom_container_command="/usr/sbin/init"
+  else  
+    echo "- no"
+  fi
 
- echo "Container volumes:"
- for v in "${VOLUMES[@]}"; do
-   # shellcheck disable=SC2206
-   local share=(${v//:/ })
-   [[ "${share[0]}" == "" ]] && { echo " - no volumes"; continue; }
-   [[ "${share[0]:0:1}" == "/" ]] && { local _src_dir=${share[0]}; } || { local _src_dir="${DIR}/storage/${share[0]}"; }
+  echo "Container volumes:"
+  for v in "${VOLUMES[@]}"; do
+    # shellcheck disable=SC2206
+    local share=(${v//:/ })
+    [[ "${share[0]}" == "" ]] && { echo " - no volumes"; continue; }
+    [[ "${share[0]:0:1}" == "/" ]] && { local _src_dir=${share[0]}; } || { local _src_dir="${DIR}/storage/${share[0]}"; }
 
-   [[ ! -d "${_src_dir}" ]] && mkdir -p "${_src_dir}" 1>/dev/null 2>&1
+    [[ ! -d "${_src_dir}" ]] && mkdir -p "${_src_dir}" 1>/dev/null 2>&1
 
-   local volumes="${volumes}-v ${_src_dir}:${share[1]} "; echo " - ${_src_dir} => ${share[1]}"
- done
- 
- echo "Container devices:"
- for v in "${DEVICES[@]}"; do
-   # shellcheck disable=SC2206
-   [[ "${v}" == "" ]] && { echo " - no devices"; continue; }
-   local devices="${devices}--device ${v} "; echo " - ${v}"
- done
-
- echo "Environment variables:"
- for v in "${ENVIRONMENT[@]}"; do
-   # shellcheck disable=SC2206
-   local _env=(${v//=/ })
-   [[ "${_env[0]}" == "" ]] && { echo " - no variables"; continue; }
-   local envi="${envi}-e ${_env[0]}=${_env[1]} "; echo " - ${_env[0]} = ${_env[1]}"
- done
-
- echo "Container CAPS:"
- if [[ ${CAPS_PRIVILEGED} -eq 0 ]]; then
-  for v in "${CONTAINER_CAPS[@]}"; do
-    [[ "${v}" == "" ]] && { echo " - no CAPS"; continue; }
-    local caps="${caps}--cap-add ${v} "; echo " - ${v}"
+    local volumes="${volumes}-v ${_src_dir}:${share[1]} "; echo " - ${_src_dir} => ${share[1]}"
   done
- else 
-  local caps="--privileged";  echo " - privileged mode"
- fi
+  
+  echo "Container devices:"
+  for v in "${DEVICES[@]}"; do
+    # shellcheck disable=SC2206
+    [[ "${v}" == "" ]] && { echo " - no devices"; continue; }
+    local devices="${devices}--device ${v} "; echo " - ${v}"
+  done
 
- # network 
- [[ "${IP}" == "host" ]] && { local _net_argument="--net=host"; } || { local _net_argument="--ip=${IP}"; }
+  echo "Environment variables:"
+  for v in "${ENVIRONMENT[@]}"; do
+    # shellcheck disable=SC2206
+    local _env=(${v//=/ })
+    [[ "${_env[0]}" == "" ]] && { echo " - no variables"; continue; }
+    local envi="${envi}-e ${_env[0]}=${_env[1]} "; echo " - ${_env[0]} = ${_env[1]}"
+  done
 
- # NS Isolation
- echo -n "NS_USER mapping: "
- if [[ "${NS_USER}" == "keep-id" ]]; then
-   local __ns_arguments="";  echo "none"
- elif [[ "${NS_USER:0:1}" == "@" ]]; then 
-   local __ns_arguments="--user=${NS_USER:1}";  echo "run as user"
- else
-   local __ns_arguments="--subuidname=${NS_USER} --subgidname=${NS_USER}"; echo "uid and gid mapping"
- fi
+  echo "Container CAPS:"
+  if [[ ${CAPS_PRIVILEGED} -eq 0 ]]; then
+    for v in "${CONTAINER_CAPS[@]}"; do
+      [[ "${v}" == "" ]] && { echo " - no CAPS"; continue; }
+      local caps="${caps}--cap-add ${v} "; echo " - ${v}"
+    done
+  else 
+    local caps="--privileged";  echo " - privileged mode"
+  fi
 
- echo -e "Container IP:\n - ${IP}"
+  # network 
+  [[ "${IP}" == "host" ]] && { local _net_argument="--net=host"; } || { local _net_argument="--ip=${IP}"; }
 
- local action="start"
+  # NS Isolation
+  echo -n "NS_USER mapping: "
+  if [[ "${NS_USER}" == "keep-id" ]]; then
+    local __ns_arguments="";  echo "none"
+  elif [[ "${NS_USER:0:1}" == "@" ]]; then 
+    local __ns_arguments="--user=${NS_USER:1}";  echo "run as user"
+  else
+    local __ns_arguments="--subuidname=${NS_USER} --subgidname=${NS_USER}"; echo "uid and gid mapping"
+  fi
 
- if ${CONTAINER_BIN} container exists "${APPLICATION}" 1>/dev/null 2>&1; then
-   __command "Stopping container" 1 ${CONTAINER_BIN} stop -i -t 5 "${APPLICATION}"
-  [[ ${clean} -eq 1 ]] && { __command "[!] Removing already existing container..." 1 ${CONTAINER_BIN} rm -fiv "${APPLICATION}"; local action="run"; }
- else
-   local action="run"
- fi
+  echo -e "Container IP:\n - ${IP}"
 
- if [[ "${action}" == "start" ]]; then  
-   [[ ${attach} -eq 1 ]] && local _option="-a"  || local _option=""
-   [[ ${attach} == 0 ]] && local _silent=1 || local _silent=0 # flip attach value and store to _silent
-   __command "[!] Starting container..." ${_silent} ${CONTAINER_BIN} start "${_option}" "${APPLICATION}"
- else 
-   [[ ${interactive} -eq 1 ]] && { local action="run"; local it_options="-it --entrypoint=bash"; echo "[i] Interactive run..."; } || { local action="run"; local it_options="-d"; }
-   [[ ${attach} -eq 1 ]] && { local action="create"; local it_options=""; }
+  local action="start"
 
-   # shellcheck disable=SC2086
+  if ${CONTAINER_BIN} container exists "${APPLICATION}" 1>/dev/null 2>&1; then
+    __command "Stopping container" 1 ${CONTAINER_BIN} stop -i -t 5 "${APPLICATION}"
+    [[ ${clean} -eq 1 ]] && { __command "[!] Removing already existing container..." 1 ${CONTAINER_BIN} rm -fiv "${APPLICATION}"; local action="run"; }
+  else
+    local action="run"
+  fi
+
+  if [[ "${action}" == "start" ]]; then  
+    [[ ${attach} -eq 1 ]] && local _option="-a"  || local _option=""
+    [[ ${attach} == 0 ]] && local _silent=1 || local _silent=0 # flip attach value and store to _silent
+    __command "[!] Starting container..." ${_silent} ${CONTAINER_BIN} start "${_option}" "${APPLICATION}"
+    return $?
+  fi 
+
+  [[ ${interactive} -eq 1 ]] && { local action="run"; local it_options="-it --entrypoint=bash"; echo "[i] Interactive run..."; } || { local action="run"; local it_options="-d"; }
+  [[ ${attach} -eq 1 ]] && { local action="create"; local it_options=""; }
+
+  # shellcheck disable=SC2086
   __command "[!] Creating and starting container..." 0 \
   ${CONTAINER_BIN} ${action} ${limits_cpu} ${limits_mem}\
   ${__ns_arguments}\
@@ -229,7 +231,6 @@ do_start() {
 
 
   [[ ${attach} -eq 1 ]] && ${CONTAINER_BIN} start -a "${APPLICATION}"
- fi
 }
 
 do_stop() {
@@ -290,32 +291,32 @@ do_build() {
 }
 
 do_init(){
- local dirs=("container" "storage")
- local docker_mkdir=""
- local docker_volumes=""
- local volumes=""
- for v in "${VOLUMES[@]}"; do
-   [[ "${v}" == "" ]] && continue
-   # shellcheck disable=SC2206
-   local share=(${v//:/ })
+  local dirs=("container" "storage")
+  local docker_mkdir=""
+  local docker_volumes=""
+  local volumes=""
+  for v in "${VOLUMES[@]}"; do
+    [[ "${v}" == "" ]] && continue
+    # shellcheck disable=SC2206
+    local share=(${v//:/ })
 
-   local docker_mkdir="${docker_mkdir}RUN mkdir -p ${share[1]}\n"
-   local docker_volumes="${docker_volumes}VOLUME ${share[1]}\n"
-   [[ "${share[0]:0:1}" != "/" ]] && local volumes+=("${share[0]}")
- done
+    local docker_mkdir="${docker_mkdir}RUN mkdir -p ${share[1]}\n"
+    local docker_volumes="${docker_volumes}VOLUME ${share[1]}\n"
+    [[ "${share[0]:0:1}" != "/" ]] && local volumes+=("${share[0]}")
+  done
 
- echo "Initializing folders structures..."
- for d in "${dirs[@]}"; do
-    [[ ! -d "${DIR}/${d}" ]] && echo " - Creating ../${d}" || echo " - Skipping ../${d}"
- done
+  echo "Initializing folders structures..."
+  for d in "${dirs[@]}"; do
+      [[ ! -d "${DIR}/${d}" ]] && echo " - Creating ../${d}" || echo " - Skipping ../${d}"
+  done
 
- if [[ -f "${DIR}/container/Dockerfile" ]]; then
-   echo "Skipping ../container/Dockerfile creation..."
- else
-   echo "Creating blank ../container/Dockerfile..."
-   [[ ! -d "${DIR}/container" ]] && mkdir -p "${DIR}/container" || echo
+  if [[ -f "${DIR}/container/Dockerfile" ]]; then
+    echo "Skipping ../container/Dockerfile creation..."
+  else
+    echo "Creating blank ../container/Dockerfile..."
+    [[ ! -d "${DIR}/container" ]] && mkdir -p "${DIR}/container" || echo
   
-   cat > "${DIR}/container/Dockerfile" <<EOF
+    cat > "${DIR}/container/Dockerfile" <<EOF
 FROM fedora:latest
 
 ARG APP_VER
@@ -328,56 +329,55 @@ RUN dnf install -y curl &&\\
     dnf clean all
 EOF
 
- echo -e "${docker_mkdir}" >> "${DIR}/container/Dockerfile"
- echo -e "${docker_volumes}" >> "${DIR}/container/Dockerfile" 
+  echo -e "${docker_mkdir}" >> "${DIR}/container/Dockerfile"
+  echo -e "${docker_volumes}" >> "${DIR}/container/Dockerfile" 
 
- if [[ ${ATTACH_NVIDIA} -eq 1 ]]; then
-  # shellcheck disable=SC2028
-  echo "RUN echo -e \"\\n\\n#Required for NVidia integration\\nldconfig\\n\" >> /root/.bashrc" >> "${DIR}/container/Dockerfile"
- fi
-
- echo "CMD [${CMD}]" >> "${DIR}/container/Dockerfile"
- fi
- 
- echo "Create volumes..."
- local _change_owner=0
- if [[ "${NS_USER}" != "keep-id" ]] && [[ "${NS_USER:0:1}" != "@" ]]; then
-   local _change_owner=1 
-   local _uid=$(grep "${NS_USER}" /etc/subuid|cut -d ':' -f 2)
-   local _gid=$(grep "${NS_USER}" /etc/subgid|cut -d ':' -f 2)
- fi
-
- # shellcheck disable=SC2048
- for v in ${volumes[*]}; do
-  [[ "${v}" == "" ]] && continue
-  local _dir="storage/${v}"
-
-  echo -n " - mkdir ${_dir} ..."
-  if [[ -d "${DIR}/${_dir}" ]]; then
-    echo "exist"
-  else 
-   mkdir -p "${DIR}/${_dir}" 1>/dev/null 2>&1 && echo "created" || echo "failed"
+  if [[ ${ATTACH_NVIDIA} -eq 1 ]]; then
+    # shellcheck disable=SC2028
+    echo "RUN echo -e \"\\n\\n#Required for NVidia integration\\nldconfig\\n\" >> /root/.bashrc" >> "${DIR}/container/Dockerfile"
   fi
 
-  if [[ ${_change_owner} -eq 1 ]]; then
-    echo " - permissions ${_dir} => ${_uid}:${_gid}, mode 700..."
-    chown "${_uid}":"${_gid}" "${DIR}/${_dir}"
-    chmod 700 "${DIR}/${_dir}"
+  echo "CMD [${CMD}]" >> "${DIR}/container/Dockerfile"
   fi
- done
- 
+  
+  echo "Create volumes..."
+  local _change_owner=0
+  if [[ "${NS_USER}" != "keep-id" ]] && [[ "${NS_USER:0:1}" != "@" ]]; then
+    local _change_owner=1 
+    local _uid=$(grep "${NS_USER}" /etc/subuid|cut -d ':' -f 2)
+    local _gid=$(grep "${NS_USER}" /etc/subgid|cut -d ':' -f 2)
+  fi
 
- echo -n "Creating systemd service file..."
- local service_name=$(basename "$0")
- # shellcheck disable=SC2206
- local service_name=(${service_name//./ })
- # shellcheck disable=SC2178
- local service_name=${service_name[0]}
- 
- # shellcheck disable=SC2128
- 
- if [[ ! -f "${DIR}/${service_name}.service" ]]; then
- cat > "${DIR}/${service_name}.service" <<EOF
+  # shellcheck disable=SC2048
+  for v in ${volumes[*]}; do
+    [[ "${v}" == "" ]] && continue
+    local _dir="storage/${v}"
+
+    echo -n " - mkdir ${_dir} ..."
+    if [[ -d "${DIR}/${_dir}" ]]; then
+      echo "exist"
+    else 
+    mkdir -p "${DIR}/${_dir}" 1>/dev/null 2>&1 && echo "created" || echo "failed"
+    fi
+
+    if [[ ${_change_owner} -eq 1 ]]; then
+      echo " - permissions ${_dir} => ${_uid}:${_gid}, mode 700..."
+      chown "${_uid}":"${_gid}" "${DIR}/${_dir}"
+      chmod 700 "${DIR}/${_dir}"
+    fi
+  done
+
+  echo -n "Creating systemd service file..."
+  local service_name=$(basename "$0")
+  # shellcheck disable=SC2206
+  local service_name=(${service_name//./ })
+  # shellcheck disable=SC2178
+  local service_name=${service_name[0]}
+  
+  # shellcheck disable=SC2128
+  
+  if [[ ! -f "${DIR}/${service_name}.service" ]]; then
+    cat > "${DIR}/${service_name}.service" <<EOF
 [Unit]
 Description=Podman ${service_name}.service
 Wants=network.target
@@ -395,10 +395,10 @@ ExecStop=${DIR}/${service_name}.sh stop
 [Install]
 WantedBy=multi-user.target default.target
 EOF
- echo "ok"
-else
- echo "skipped"
-fi
+    echo "ok"
+  else
+    echo "skipped"
+  fi
 }
 
 show_help(){
@@ -424,22 +424,22 @@ show_help(){
 
 #=============================================
 declare -A COMMANDS=(
- [INIT,S]=0   [INIT,F]="do_init"    
- [BUILD,S]=0  [BUILD,F]="do_build"          
- [START,S]=0  [START,F]="do_start"          
- [STOP,S]=0   [STOP,F]="do_stop"
- [TOP,S]=0    [TOP,F]="do_top"
- [LOGS,S]=0   [LOGS,F]="do_logs"
- [SSH,S]=0    [SSH,F]="do_ssh"
- [UPDATE,S]=0 [UPDATE,F]="__do_lib_upgrade"
+  [INIT,S]=0   [INIT,F]="do_init"    
+  [BUILD,S]=0  [BUILD,F]="do_build"          
+  [START,S]=0  [START,F]="do_start"          
+  [STOP,S]=0   [STOP,F]="do_stop"
+  [TOP,S]=0    [TOP,F]="do_top"
+  [LOGS,S]=0   [LOGS,F]="do_logs"
+  [SSH,S]=0    [SSH,F]="do_ssh"
+  [UPDATE,S]=0 [UPDATE,F]="__do_lib_upgrade"
 )
 
 declare -A FLAGS=(
- [CLEAN]=0       [-C]=CLEAN         [--CLEAN]=CLEAN
- [ATTACH]=0      [-A]=ATTACH        [--ATTACH]=ATTACH
- [INTERACTIVE]=0 [-IT]=INTERACTIVE  [--INTERACTIVE]=INTERACTIVE
- [FOLLOW]=0      [-F]=FOLLOW        [--FOLLOW]=FOLLOW
- [VER]=${VER} 
+  [CLEAN]=0       [-C]=CLEAN         [--CLEAN]=CLEAN
+  [ATTACH]=0      [-A]=ATTACH        [--ATTACH]=ATTACH
+  [INTERACTIVE]=0 [-IT]=INTERACTIVE  [--INTERACTIVE]=INTERACTIVE
+  [FOLLOW]=0      [-F]=FOLLOW        [--FOLLOW]=FOLLOW
+  [VER]=${VER} 
 )
 
 # Disallow internal commands override
@@ -453,7 +453,7 @@ done
 
 for i in "${@}"; do
   if [[ ${COMMANDS[${i^^},S]+_} ]]; then
-   COMMANDS[${i^^},S]=1
+    COMMANDS[${i^^},S]=1
   elif [[ ${FLAGS[${i^^}]+_} ]]; then 
     FLAGS[${FLAGS[${i^^}]}]=1
   else case ${i,,} in
@@ -462,8 +462,8 @@ for i in "${@}"; do
   help|-h|--help)
     show_help COMMANDS FLAGS
     exit 0;;
- esac fi
- shift
+  esac fi
+  shift
 done
 
 for i in ${!COMMANDS[*]}; do 
