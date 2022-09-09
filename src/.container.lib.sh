@@ -227,7 +227,7 @@ do_start() {
   ${envi}\
   ${volumes}\
   ${nvidia_args}\
-  localhost/${APPLICATION}:${ver} "${custom_container_command}"
+  localhost/${APPLICATION}:${ver} # ToDo: "${custom_container_command}"
 
 
   [[ ${attach} -eq 1 ]] && ${CONTAINER_BIN} start -a "${APPLICATION}"
