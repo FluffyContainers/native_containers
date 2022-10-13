@@ -49,7 +49,7 @@ __command(){
   local status="$2"  # 0 or 1
   shift;shift
 
-  [[ "${__DEBUG}" -eq 1 ]] && echo "${_COLOR[INFO]}[CMD-DBG] ${_COLOR[GRAY]} $* ${_COLOR[RESET]}"
+  [[ "${__DEBUG}" -eq 1 ]] && echo -e "${_COLOR[INFO]}[CMD-DBG] ${_COLOR[GRAY]} $* ${_COLOR[RESET]}"
 
   if [[ ${status} -eq 1 ]]; then
     echo -n "${title}..."

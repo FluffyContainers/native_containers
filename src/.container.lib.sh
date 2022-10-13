@@ -20,6 +20,7 @@
 LIB_VERSION="0.0.0"
 PATH=${PATH}:/usr/bin
 __DEBUG=0
+__ALLOW_CMD_HOOKS=0
 
 __dir(){
   local __source="${BASH_SOURCE[0]}"
@@ -51,6 +52,7 @@ CONTAINER_CAPS=${CONTAINER_CAPS:-}
 CAPS_PRIVILEGED=${CAPS_PRIVILEGED:0}
 BUILD_ARGS=${BUILD_ARGS:-}
 DEVICES=${DEVICES:-}
+__ALLOW_CMD_HOOKS=${__ALLOW_COMMAND_HOOKS:-0}
 
 NS_USER=${NS_USER:-containers}
 declare -A LIMITS=${LIMITS:([CPU]="0.0" [MEMORY]=0)}
@@ -107,6 +109,7 @@ do_start() {
   local bin_options=""
   local custom_container_command=""
   local caps=""
+  local it_options=""
 
   [[ ${clean} -eq 1 ]] && [[ ${attach} -eq 1 ]] && { echo "[E] -c and -a options cannot be used together!"; return; }
 
@@ -135,7 +138,8 @@ do_start() {
     # ToDo: Add this only for ubuntu/debian
     #VOLUMES+=("$(mktemp -d):/run")
     ENVIRONMENT+=("container=docker")
-    local bin_options="${bin_options}--cgroupns=host --entrypoint= "
+    local bin_options="${bin_options}--cgroupns=host "
+    local it_options="${it_options}--entrypoint= "
     local custom_container_command="/usr/sbin/init"
   else  
     echo "- no"
@@ -209,28 +213,36 @@ do_start() {
     return $?
   fi 
 
-  [[ ${interactive} -eq 1 ]] && { local action="run"; local it_options="-it --entrypoint=bash"; echo "[i] Interactive run..."; } || { local action="run"; local it_options="-d"; }
+  [[ ${interactive} -eq 1 ]] && { local action="run"; local it_options="-it --entrypoint=bash"; unset custom_container_command; echo "[i] Interactive run..."; } || { local action="run"; local it_options="-d"; }
   [[ ${attach} -eq 1 ]] && { local action="create"; local it_options=""; }
 
-  # shellcheck disable=SC2086
-  __command "[!] Creating and starting container..." 0 \
-  ${CONTAINER_BIN} ${action} ${limits_cpu} ${limits_mem}\
-  ${__ns_arguments}\
-  --name ${APPLICATION}\
-  --hostname ${APPLICATION}\
-  ${caps}\
-  ${devices}\
-  ${it_options}\
-  ${bin_options}\
-  ${_net_argument}\
-  ${lxcfs_mounts}\
-  ${envi}\
-  ${volumes}\
-  ${nvidia_args}\
-  localhost/${APPLICATION}:${ver} # ToDo: "${custom_container_command}"
+  # shellcheck disable=SC2206
+  local _args=(
+  "${CONTAINER_BIN}" "${action}" ${limits_cpu} ${limits_mem}\
+    ${__ns_arguments}\
+    --name "${APPLICATION}"\
+    --hostname "${APPLICATION}"\
+    ${caps}\
+    ${devices}\
+    ${it_options}\
+    ${bin_options}\
+    ${_net_argument}\
+    ${lxcfs_mounts}\
+    ${envi}\
+    ${volumes}\
+    ${nvidia_args}\
+    "localhost/${APPLICATION}:${ver}"
+  )
 
+  if [ -n "${custom_container_command}" ]; then
+    # shellcheck disable=SC2206
+    local _args+=(${custom_container_command})
+  fi
 
-  [[ ${attach} -eq 1 ]] && ${CONTAINER_BIN} start -a "${APPLICATION}"
+  # shellcheck disable=SC2086,SC2068
+  __command "[!] Creating and starting container..." 0 ${_args[@]}
+
+  [[ ${attach} -eq 1 ]] && ${CONTAINER_BIN} start -a "${APPLICATION}" || true
 }
 
 do_stop() {
@@ -444,7 +456,7 @@ declare -A FLAGS=(
 
 # Disallow internal commands override
 for key in ${!CUSTOM_COMMANDS[*]}; do
-  [[ ! ${COMMANDS[${key},F]+_} ]] && { COMMANDS[${key},S]=0; COMMANDS[${key},F]=${CUSTOM_COMMANDS[${key}]}; }
+  [[ ! ${COMMANDS[${key},F]+_} ]] && [[ "${key}" != *"_HOOK" ]] && { COMMANDS[${key},S]=0; COMMANDS[${key},F]=${CUSTOM_COMMANDS[${key}]}; }
 done
 
 for key in ${!CUSTOM_FLAGS[*]}; do
@@ -468,7 +480,12 @@ done
 
 for i in ${!COMMANDS[*]}; do 
   [[ "${i##*,}" == "F" ]] && continue
-  [[ ${COMMANDS[${i%,*},S]} -eq 1 ]] && { ${COMMANDS[${i%,*},F]} FLAGS; exit $?; }
+  [[ ${COMMANDS[${i%,*},S]} -eq 1 ]] && {
+    [[ ${__ALLOW_CMD_HOOKS} -eq 1 ]] && [[ ${CUSTOM_COMMANDS[${i%,*},PRE_HOOK]+_} ]] && ${CUSTOM_COMMANDS[${i%,*},PRE_HOOK]} FLAGS
+    ${COMMANDS[${i%,*},F]} FLAGS; r=$?
+    [[ ${r} -eq 0 ]] && [[ ${__ALLOW_CMD_HOOKS} -eq 1 ]] && [[ ${CUSTOM_COMMANDS[${i%,*},POST_HOOK]+_} ]] && ${CUSTOM_COMMANDS[${i%,*},POST_HOOK]} FLAGS
+    exit ${r}
+  }
 done
 
 show_help COMMANDS FLAGS
