@@ -65,7 +65,7 @@ __command(){
 }
 
 __run(){
-  echo -ne "${_COLOR[INFO]}[EXEC] ${_COLOR[GRAY]}$* -> ["
+  echo -ne "${_COLOR[INFO]}[EXEC] ${_COLOR[GRAY]}"; echo -n "$* -> ["  # avoid escaping characters processing
   "$@" 1>/dev/null 2>/dev/null
   local n=$?
   [[ $n -eq 0 ]] && echo -e "${_COLOR[OK]}ok${_COLOR[GRAY]}]${_COLOR[RESET]}" || echo -e "${_COLOR[ERROR]}fail[#${n}]${_COLOR[GRAY]}]${_COLOR[RESET]}"
@@ -97,16 +97,18 @@ __download(){
   local _url="$1"
   local _file="${_url##*/}"
   [[ -z $2 ]] && local _destination="./" || local _destination="$2"
+  [[ "${_destination:0-1}" == "/" ]] && local _dest_path="${_destination}/${_file}" || local _dest_path="${_destination}"
 
   __echo "Downloading file ${_file}: "
-  curl -f "${_follow_link}" --progress-bar "${_url}" -o "${_destination}/${_file}" 2>&1
+  # shellcheck disable=SC2086
+  curl -f ${_follow_link} --progress-bar "${_url}" -o "${_dest_path}" 2>&1
   local _ret=$?
 
   [[ ${_ret} -eq 0 ]] && {
-    tput cuu1; echo -ne "\033[0K\r"; tput cuu1
+    echo -ne "\E[A"; echo -ne "\033[0K\r"; echo -ne "\E[A"
     __echo "Downloading file ${_file}: [${_COLOR[OK]}OK${_COLOR[RESET]}]"
   } || {
-    tput cuu1; echo -ne "\033[0K\r"; tput cuu1;echo -ne "\033[0K\r"; tput cuu1;
+    echo -ne "\E[A"; echo -ne "\033[0K\r"; echo -ne "\E[A";echo -ne "\033[0K\r"; echo -ne "\E[A";
     __echo "Downloading file ${_file}: [${_COLOR[ERROR]}ERROR ${_ret}${_COLOR[RESET]}]"
   }
   return ${_ret} 
