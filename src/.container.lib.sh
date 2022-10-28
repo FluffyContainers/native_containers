@@ -150,13 +150,14 @@ do_start() {
     # shellcheck disable=SC2206
     local share=(${v//:/ })
     local _opts=""
+    local _opts_text=""
     [[ "${share[0]}" == "" ]] && { echo " - no volumes"; continue; }
     [[ "${share[0]:0:1}" == "/" ]] && { local _src_dir=${share[0]}; } || { local _src_dir="${DIR}/storage/${share[0]}"; }
 
     [[ ! -d "${_src_dir}" ]] && mkdir -p "${_src_dir}" 1>/dev/null 2>&1
-    [[ -n ${share[2]} ]] && [[ "${share[2]}" == "ro" ]] && local _opts=":ro"
+    [[ -n ${share[2]} ]] && [[ "${share[2]}" == "ro" ]] && { local _opts=":ro"; local _opts_text="[read-only]"; }
 
-    local volumes="${volumes}-v ${_src_dir}:${share[1]}${_opts} "; echo " - ${_src_dir} => ${share[1]} [${_opts}]"
+    local volumes="${volumes}-v ${_src_dir}:${share[1]}${_opts} "; echo " - ${_src_dir} => ${share[1]} ${_opts_text}"
   done
   
   echo "Container devices:"
