@@ -127,7 +127,7 @@ do_start() {
     local limits_mem="--memory=${LIMITS[MEMORY]}G"
   fi
 
-  echo "LXS-FS extension is installed: "
+  echo "LXC-FS extension is installed: "
   [[ "${IS_LXCFS_ENABLED}" -eq 1 ]] && { local lxcfs_mounts=${LXC_FS_OPTS[*]}; echo "- YES"; } || { echo "- NO"; }
 
   echo "SystemD enabled container:"
