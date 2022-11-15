@@ -59,7 +59,8 @@ __command(){
     return ${n}
   else
     echo "${title}..."
-    "$@"
+    # shellcheck disable=SC2294
+    eval "$@"
     return $?
   fi
 }

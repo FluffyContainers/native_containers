@@ -172,7 +172,7 @@ do_start() {
     # shellcheck disable=SC2206
     local _env=("${v%%=*}" "${v#*=}")
     [[ "${_env[0]}" == "" ]] && { echo " - no variables"; continue; }
-    local envi="${envi}-e ${_env[0]}=${_env[1]} "; echo " - ${_env[0]} = ${_env[1]}"
+    local envi="${envi}-e ${_env[0]}='${_env[1]}' "; echo " - ${_env[0]} = '${_env[1]}'"
   done
 
   echo "Container CAPS:"
