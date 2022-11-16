@@ -51,6 +51,7 @@ ATTACH_SYSTEMD=${ATTACH_SYSTEMD:-0}
 CONTAINER_CAPS=${CONTAINER_CAPS:-}
 CAPS_PRIVILEGED=${CAPS_PRIVILEGED:0}
 BUILD_ARGS=${BUILD_ARGS:-}
+BUILD_VOLUMES=${BUILD_VOLUMES:-}
 DEVICES=${DEVICES:-}
 __ALLOW_CMD_HOOKS=${__ALLOW_COMMAND_HOOKS:-0}
 
@@ -61,6 +62,10 @@ declare -A CUSTOM_FLAGS=${CUSTOM_FLAGS:()}; unset "CUSTOM_FLAGS[0]"
 
 
 IS_LXCFS_ENABLED=$([[ -d "/var/lib/lxcfs" ]] && echo "1" || echo "0")
+if ! systemctl status lxcfs 1>/dev/null 2>&1; then 
+  __echo "ERROR" "LXC FS is installed but service \"lxcfs\" is not running!"
+  IS_LXCFS_ENABLED=0
+fi
 # options required if LXCFS is installed
 LXC_FS_OPTS=(
   "-v" "/var/lib/lxcfs/proc/cpuinfo:/proc/cpuinfo:rw"
@@ -72,6 +77,8 @@ LXC_FS_OPTS=(
 )
 
 CONTAINER_BIN="podman"
+${CONTAINER_BIN} 1>/dev/null 2>&1
+[[ $? -eq 127 ]] && { CONTAINER_BIN="docker"; __echo "WARN" "No podman installation found, using docker "; }
 
 
 verify_requested_resources(){
@@ -281,6 +288,7 @@ do_build() {
   local ver=${flags[VER]}
   local _clean_flag=${flags[CLEAN]}
   local _build_args=""
+  local volumes=""
 
   if [[ ${_clean_flag} -eq 1 ]]; then
     local _build_args+="--rm --force-rm --no-cache --pull-always"
@@ -300,9 +308,24 @@ do_build() {
     local _build_args="${_build_args}--build-arg ${_args[0]}=${_args[1]} "
     echo " - ${_args[0]} = ${_args[1]}"
   done
+
+  echo "Build volumes:"
+  for v in "${BUILD_VOLUMES[@]}"; do
+    # shellcheck disable=SC2206
+    local share=(${v//:/ })
+    local _opts=""
+    local _opts_text=""
+    [[ "${share[0]}" == "" ]] && { echo " - no volumes"; continue; }
+    [[ "${share[0]:0:1}" == "/" ]] && { local _src_dir=${share[0]}; } || { local _src_dir="${DIR}/storage/${share[0]}"; }
+
+    [[ ! -d "${_src_dir}" ]] && mkdir -p "${_src_dir}" 1>/dev/null 2>&1
+    [[ -n ${share[2]} ]] && [[ "${share[2]}" == "ro" ]] && { local _opts=":ro"; local _opts_text="[read-only]"; }
+
+    local volumes="${volumes}-v ${_src_dir}:${share[1]}${_opts} "; echo " - ${_src_dir} => ${share[1]} ${_opts_text}"
+  done
   
   # shellcheck disable=SC2086
-  ${CONTAINER_BIN} build --build-arg APP_VER="${VER}" ${_build_args} -t "localhost/${APPLICATION}:${ver}" container
+  ${CONTAINER_BIN} build ${volumes} --build-arg APP_VER="${VER}" ${_build_args} -t "localhost/${APPLICATION}:${ver}" container
 }
 
 do_init(){
