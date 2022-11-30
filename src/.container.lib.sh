@@ -125,8 +125,8 @@ do_start() {
   verify_requested_resources
   if [[ ${LIMITS[CPU]%.*} -ne 0 ]]; then 
     local total_cores=$(($(nproc) - 1))
-    local min_core=$((total_cores - LIMITS[CPU] - 1))
-    local limits_cpu="--cpuset-cpus=${min_core}-${total_cores}"; echo -e "CPU cores set:\n- ${min_core}-${total_cores}"
+    local min_core=$((total_cores - (LIMITS[CPU] - 1)))
+    local limits_cpu="--cpuset-cpus=${min_core}-${total_cores}"; echo -e "CPU cores set:\n- ${min_core}-${total_cores} (${LIMITS[CPU]} cores)"
   fi
 
   if [[ ${LIMITS[CPU]%.*} -ne 0 ]]; then 
