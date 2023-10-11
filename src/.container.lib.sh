@@ -46,6 +46,8 @@ VOLUMES=${VOLUMES:-}
 ENVIRONMENT=${ENVIRONMENT:-}   
 CMD=${CMD:-}                   
 IP=${IP:-}
+APP_HOSTNAME=${APP_HOSTNAME:-${APPLICATION}}
+APP_INTERACTIVE_SHELL=${APP_INTERACTIVE_SHELL:-bash}
 ATTACH_NVIDIA=${ATTACH_NVIDIA:-0}
 ATTACH_SYSTEMD=${ATTACH_SYSTEMD:-0}
 CONTAINER_CAPS=${CONTAINER_CAPS:-}
@@ -152,6 +154,8 @@ do_start() {
     echo "- no"
   fi
 
+  echo "Container hostname: ${APP_HOSTNAME}"
+
   echo "Container volumes:"
   for v in "${VOLUMES[@]}"; do
     # shellcheck disable=SC2206
@@ -231,7 +235,7 @@ do_start() {
   "${CONTAINER_BIN}" "${action}" ${limits_cpu} ${limits_mem}\
     ${__ns_arguments}\
     --name "${APPLICATION}"\
-    --hostname "${APPLICATION}"\
+    --hostname "${APP_HOSTNAME}"\
     ${caps}\
     ${devices}\
     ${it_options}\
@@ -244,7 +248,7 @@ do_start() {
     "localhost/${APPLICATION}:${ver}"
   )
 
-  if [ -n "${custom_container_command}" ]; then
+  if [[ -n "${custom_container_command}" ]]; then
     # shellcheck disable=SC2206
     local _args+=(${custom_container_command})
   fi
