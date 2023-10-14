@@ -29,27 +29,33 @@ __dir(){
 DIR=$(__dir)
 
 
+# [template] !!! DO NOT MODIFY CODE INSIDE. INSTEAD USE apply-teplate.sh script to update template !!!
+# [module: core.sh]
+
+
+# shellcheck disable=SC2155,SC2015
+
 # =====================
-# 
 #  Terminal functions
-#
 # =====================
+
 declare -A _COLOR=(
-  [INFO]="\033[38;05;39m"
-  [ERROR]="\033[38;05;161m"
-  [WARN]="\033[38;05;178m"
-  [OK]="\033[38;05;40m"
-  [GRAY]="\033[38;05;245m"
-  [RESET]="\033[m"
+    [INFO]="\033[38;05;39m"
+    [ERROR]="\033[38;05;161m"
+    [WARN]="\033[38;05;178m"
+    [OK]="\033[38;05;40m"
+    [GRAY]="\033[38;05;245m"
+    [DARKPINK]="\033[38;05;127m"
+    [RESET]="\033[m"
 )
 
-
+# deprecated, should be overseeded by __run with porting functionality and letting it be simple as __run
 __command(){
   local title="$1"
   local status="$2"  # 0 or 1
   shift;shift
 
-  [[ "${__DEBUG}" -eq 1 ]] && echo -e "${_COLOR[INFO]}[CMD-DBG] ${_COLOR[GRAY]} $* ${_COLOR[RESET]}"
+  [[ "${__DEBUG}" -eq 1 ]] && echo "${_COLOR[INFO]}[CMD-DBG] ${_COLOR[GRAY]} $* ${_COLOR[RESET]}"
 
   if [[ ${status} -eq 1 ]]; then
     echo -n "${title}..."
@@ -59,21 +65,74 @@ __command(){
     return ${n}
   else
     echo "${title}..."
-    # shellcheck disable=SC2294
-    eval "$@"
+    "$@"
     return $?
   fi
 }
 
+# __run [-t "command caption" [-s] [-f "echo_func_name"]] command
+# -t "command caption" - instead of command itself, show the specified text
+# -s - if provided, command itself would be hidden from the output
+# -f - if provided, output of function would be displayed in title
+# Samples:
+# _test(){
+#  echo "lol" 
+#}
+# __run -s -t "Updating" -f "_test" update_dirs
 __run(){
-  echo -ne "${_COLOR[INFO]}[EXEC] ${_COLOR[GRAY]}"; echo -n "$* -> ["  # avoid escaping characters processing
-  "$@" 1>/dev/null 2>/dev/null
-  local n=$?
-  [[ $n -eq 0 ]] && echo -e "${_COLOR[OK]}ok${_COLOR[GRAY]}]${_COLOR[RESET]}" || echo -e "${_COLOR[ERROR]}fail[#${n}]${_COLOR[GRAY]}]${_COLOR[RESET]}"
-  return ${n}
-}
+  local _default=1 _f="" _silent=0 _show_output=0 _custom_title="" _func="" _attach=0
 
-__echo() {
+  # scan for arguments
+  while true; do
+    [[ "${1^^}" == "-S" ]] && { _silent=1; shift; }
+    [[ "${1^^}" == "-T" ]] && { _custom_title="${2}"; shift; shift; _default=0; }
+    [[ "${1^^}" == "-F" ]] && { _func="${2}"; shift; shift; }
+    [[ "${1^^}" == "-O" ]] && { _show_output=1; shift; }
+    [[ "${1^^}" == "-A" ]] && { _attach=1; shift; }
+
+    [[ "${1:0:1}" != "-" ]] && break
+  done
+
+  # [[ "${DEBUG}" == "1" ]] &&  echo -e "${_COLOR[GRAY]}[DEBUG] $*${_COLOR[RESET]}"
+
+  [[ "${_custom_title}" != "" ]] && {
+    echo -ne "${_custom_title} "
+    [[ ${_silent} -eq 0 ]] && echo -ne "${_COLOR[GRAY]} | $*"
+  }
+
+  [[ ${_attach} -eq 1 ]] && {
+    echo
+    echo -e "${_COLOR[GRAY]}--------Attaching${_COLOR[RESET]}"
+    "$@" 
+    local n=$?
+    echo -e "${_COLOR[GRAY]}----------Summary"
+    echo -e "${_COLOR[DARKPINK]}[>>>>]${_COLOR[GRAY]} Exit code: ${n} ${_COLOR[RESET]}"
+    return ${n}
+  }
+  
+  local _out; _out=$("$@" 2>&1)
+  local n=$?
+
+
+  [[ -n ${_func} ]] && echo -ne " | $(${_f})"
+  [[ ${_default} -eq 0 ]] &&  echo -ne "${_COLOR[GRAY]} ... [" || echo -ne "${_COLOR[INFO]}[EXEC] ${_COLOR[GRAY]}$* -> ["
+  
+  [[ $n -eq 0 ]] && echo -e "${_COLOR[OK]}ok${_COLOR[GRAY]}]${_COLOR[RESET]}" || echo -e "${_COLOR[ERROR]}fail[#${n}]${_COLOR[GRAY]}]${_COLOR[RESET]}"
+  [[ $n -ne 0 ]] && [[ ${_silent} -eq 0 ]] || [[ ${_show_output} -eq 1 ]] && {
+    local _accent_color="DARKPINK"
+    [[ ${n} -ne 0 ]] && _accent_color="ERROR"
+    IFS=$'\n' mapfile -t out_lines <<< "${_out}"
+    echo -e "${_COLOR[${_accent_color}]}[>>>>]${_COLOR[GRAY]} ${out_lines[0]}"
+    
+    for line in "${out_lines[@]:1}"; do
+        echo -e "${_COLOR[${_accent_color}]}     | ${_COLOR[GRAY]}${line}"
+    done
+    echo -e "${_COLOR[RESET]}"
+  }
+  return ${n}
+  }
+
+  __echo() {
   local _lvl="INFO"
   local _new_line=""
 
@@ -93,39 +152,16 @@ __ask() {
     return 0
 }
 
-__download(){
-  [[ "${1^^}" == "-L" ]] && { local _follow_link="-L"; shift; } || local _follow_link=""
-  local _url="$1"
-  local _file="${_url##*/}"
-  [[ -z $2 ]] && local _destination="./" || local _destination="$2"
-  [[ "${_destination:0-1}" == "/" ]] && local _dest_path="${_destination}/${_file}" || local _dest_path="${_destination}"
-
-  __echo "Downloading file ${_file}: "
-  # shellcheck disable=SC2086
-  curl -f ${_follow_link} --progress-bar "${_url}" -o "${_dest_path}" 2>&1
-  local _ret=$?
-
-  [[ ${_ret} -eq 0 ]] && {
-    echo -ne "\E[A"; echo -ne "\033[0K\r"; echo -ne "\E[A"
-    __echo "Downloading file ${_file}: [${_COLOR[OK]}OK${_COLOR[RESET]}]"
-  } || {
-    echo -ne "\E[A"; echo -ne "\033[0K\r"; echo -ne "\E[A";echo -ne "\033[0K\r"; echo -ne "\E[A";
-    __echo "Downloading file ${_file}: [${_COLOR[ERROR]}ERROR ${_ret}${_COLOR[RESET]}]"
-  }
-  return ${_ret} 
+cuu1(){
+  echo -e "\E[A"
 }
-
-# =====================
-# 
-#  Upgrade functions
-#
-# =====================
 
 # https://stackoverflow.com/questions/4023830/how-to-compare-two-strings-in-dot-separated-version-format-in-bash
 # Results: 
 #          0 => =
 #          1 => >
 #          2 => <
+# shellcheck disable=SC2206
 __vercomp () {
     [[ "$1" == "$2" ]] && return 0 ; local IFS=. ; local i ver1=($1) ver2=($2)
     for ((i=${#ver1[@]}; i<${#ver2[@]}; i++));  do ver1[i]=0;  done
@@ -136,6 +172,40 @@ __vercomp () {
     done
     return 0
 }
+
+__urldecode() { : "${*//+/ }"; echo -e "${_//%/\\x}"; }
+
+__download() {
+  [[ "${1^^}" == "-L" ]] && { local _follow_link="-L"; shift; } || local _follow_link=""
+  local _url="$1"
+  local _file=$(__urldecode "${_url##*/}")
+  [[ -z $2 ]] && local _destination="./" || local _destination="$2"
+  [[ "${_destination:0-1}" == "/" ]] && local _dest_path="${_destination}/${_file}" || local _dest_path="${_destination}"
+
+  __echo "Downloading file ${_file}: "
+  # shellcheck disable=SC2086
+  curl -f ${_follow_link} --progress-bar "${_url}" -o "${_dest_path}" 2>&1
+  local _ret=$?
+
+  [[ ${_ret} -eq 0 ]] && {
+    echo -ne "\E[A"; echo -ne "\033[0K\r"; echo -ne "\E[A"
+    __echo "Downloading file ${_file}: [${_COLOR[OK]}ok${_COLOR[RESET]}]"
+  } || {
+    echo -ne "\E[A"; echo -ne "\033[0K\r"; echo -ne "\E[A";echo -ne "\033[0K\r"; echo -ne "\E[A";
+    __echo "Downloading file ${_file}: [${_COLOR[ERROR]}fail ${_ret}${_COLOR[RESET]}]"
+  }
+  return ${_ret} 
+}
+
+
+# [template] [end] !!! DO NOT REMOVE ANYTHING INSIDE, INCLUDING CURRENT LINE !!!
+
+# =====================
+# 
+#  Upgrade functions
+#
+# =====================
+
 
 handle_file(){
   IFS=" "

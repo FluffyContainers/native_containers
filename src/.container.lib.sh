@@ -36,7 +36,7 @@ APP_NAME=${BASH_SOURCE[1]}; APP_NAME=${APP_NAME##*/}; APP_NAME=${APP_NAME%.*}
 
 # Include configuration files
 . "${DIR}/.shared.lib.sh"
-[[ -f "${DIR}/.secrets" ]] && { . "${DIR}/.secrets"; __echo "Including secrets..."; }
+[[ -f "${DIR}/.secrets" ]] && { . "${DIR}/.secrets"; }
 . "${DIR}/.config"
 
 
@@ -55,6 +55,7 @@ CAPS_PRIVILEGED=${CAPS_PRIVILEGED:0}
 BUILD_ARGS=${BUILD_ARGS:-}
 BUILD_VOLUMES=${BUILD_VOLUMES:-}
 DEVICES=${DEVICES:-}
+SHM_SIZE=${SHM_SIZE:-}
 __ALLOW_CMD_HOOKS=${__ALLOW_COMMAND_HOOKS:-0}
 
 NS_USER=${NS_USER:-containers}
@@ -122,7 +123,7 @@ do_start() {
 
   [[ ${clean} -eq 1 ]] && [[ ${attach} -eq 1 ]] && { echo "[E] -c and -a options cannot be used together!"; return; }
 
-  [[ ATTACH_NVIDIA -eq 1 ]] && { __command "[i] Initializing CUDA" 1 _nvidia_cuda_init; local nvidia_args=$(_add_nvidia_mounts); echo "[i] Attaching NVIDIA stuff to container..."; } || echo -n
+  [[ ATTACH_NVIDIA -eq 1 ]] && { __run -t "Initializing CUDA" -s _nvidia_cuda_init; local nvidia_args=$(_add_nvidia_mounts); echo "[i] Attaching NVIDIA stuff to container..."; } || echo -n
 
   verify_requested_resources
   if [[ ${LIMITS[CPU]%.*} -ne 0 ]]; then 
@@ -214,21 +215,21 @@ do_start() {
   local action="start"
 
   if ${CONTAINER_BIN} container exists "${APPLICATION}" 1>/dev/null 2>&1; then
-    __command "Stopping container" 1 ${CONTAINER_BIN} stop -i -t 5 "${APPLICATION}"
-    [[ ${clean} -eq 1 ]] && { __command "[!] Removing already existing container..." 1 ${CONTAINER_BIN} rm -fiv "${APPLICATION}"; local action="run"; }
+    __run -s -t "Stopping container" ${CONTAINER_BIN} stop -i -t 5 "${APPLICATION}"
+    [[ ${clean} -eq 1 ]] && { __run -s -t "Removing already existing container" ${CONTAINER_BIN} rm -fiv "${APPLICATION}"; local action="run"; }
   else
     local action="run"
   fi
 
   if [[ "${action}" == "start" ]]; then  
     [[ ${attach} -eq 1 ]] && local _option="-a"  || local _option=""
-    [[ ${attach} == 0 ]] && local _silent=1 || local _silent=0 # flip attach value and store to _silent
-    __command "[!] Starting container..." ${_silent} ${CONTAINER_BIN} start "${_option}" "${APPLICATION}"
+    [[ ${attach} == 0 ]] && local _silent="-s" || local _silent="" # flip attach value and store to _silent
+    __run -a -s -o -t "Starting container" ${CONTAINER_BIN} start "${_option}" "${APPLICATION}"
     return $?
   fi 
 
-  [[ ${interactive} -eq 1 ]] && { local action="run"; local it_options="-it --entrypoint=bash"; unset custom_container_command; echo "[i] Interactive run..."; } || { local action="run"; local it_options="-d"; }
-  [[ ${attach} -eq 1 ]] && { local action="create"; local it_options=""; }
+  [[ ${interactive} -eq 1 ]] && { local action="run"; local _run_option="-a"; local it_options="-it --entrypoint=bash"; unset custom_container_command; echo "Interactive run..."; } || { local action="run"; local it_options="-d"; }
+  [[ ${attach} -eq 1 ]] && { local action="create"; local it_options=""; local _run_option=""; }
 
   # shellcheck disable=SC2206
   local _args=(
@@ -254,16 +255,20 @@ do_start() {
   fi
 
   # shellcheck disable=SC2086,SC2068
-  __command "[!] Creating and starting container..." 0 ${_args[@]}
-
-  [[ ${attach} -eq 1 ]] && ${CONTAINER_BIN} start -a "${APPLICATION}" || true
+  __run ${_run_option} -s -o -t "Creating and starting container" ${_args[@]}
 }
 
 do_stop() {
   local -n flags=$1
   local clean=${flags[CLEAN]}
-  __command "[I] Stopping container ..." 1 ${CONTAINER_BIN} stop -t 10 "${APPLICATION}"
-  [[ ${clean} -eq 1 ]] && __command "[!] Removing container..." 1 ${CONTAINER_BIN} rm "${APPLICATION}"
+
+  if ! ${CONTAINER_BIN} container exists "${APPLICATION}"; then
+    __echo "ERROR" "Application \"${APPLICATION}\" not exists"
+    return 1
+  fi
+
+  __run -s -t "Stopping container" ${CONTAINER_BIN} stop -t 10 "${APPLICATION}"
+  [[ ${clean} -eq 1 ]] && __run -s -t "Removing container" ${CONTAINER_BIN} rm "${APPLICATION}"
 }
 
 do_logs() {
@@ -297,7 +302,7 @@ do_build() {
   if [[ ${_clean_flag} -eq 1 ]]; then
     local _build_args+="--rm --force-rm --no-cache --pull-always"
     if ${CONTAINER_BIN} image exists "localhost/${APPLICATION}:${ver}"; then
-      __command "Removing already existing \"localhost/${APPLICATION}:${ver}\" ..." 1 ${CONTAINER_BIN} rmi -if "localhost/${APPLICATION}:${ver}"
+      __run -s -t "Removing already existing \"localhost/${APPLICATION}:${ver}\" ..." ${CONTAINER_BIN} rmi -if "localhost/${APPLICATION}:${ver}"
     fi
   fi
 
@@ -329,7 +334,7 @@ do_build() {
   done
   
   # shellcheck disable=SC2086
-  ${CONTAINER_BIN} build ${volumes} --build-arg APP_VER="${VER}" ${_build_args} -t "localhost/${APPLICATION}:${ver}" container
+  ${CONTAINER_BIN} build --format docker ${volumes} --build-arg APP_VER="${VER}" ${_build_args} -t "localhost/${APPLICATION}:${ver}" container
 }
 
 do_init(){
