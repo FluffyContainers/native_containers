@@ -103,42 +103,32 @@ verify_requested_resources(){
   [[ ${is_error} -eq 1 ]] && exit 1
 }
 
+# shellcheck disable=SC2206
 do_start() {
   local -n flags=$1
-  local ver=${FLAGS[VER]}
-  local clean=${FLAGS[CLEAN]}
-  local attach=${FLAGS[ATTACH]}
-  local interactive=${FLAGS[INTERACTIVE]}
-  local volumes=""
-  local devices=""
-  local envi=""
-  local lxcfs_mounts=""
-  local limits_mem=""
-  local limits_cpu=""
-  local nvidia_args=""
-  local bin_options=""
-  local custom_container_command=""
-  local caps=""
-  local it_options=""
+  local ver=${FLAGS[VER]} clean=${FLAGS[CLEAN]} attach=${FLAGS[ATTACH]} interactive=${FLAGS[INTERACTIVE]}
 
-  [[ ${clean} -eq 1 ]] && [[ ${attach} -eq 1 ]] && { echo "[E] -c and -a options cannot be used together!"; return; }
+  local __args=()
+  local bin_options="" custom_container_command="" it_options=""
 
-  [[ ATTACH_NVIDIA -eq 1 ]] && { __run -t "Initializing CUDA" -s _nvidia_cuda_init; local nvidia_args=$(_add_nvidia_mounts); echo "[i] Attaching NVIDIA stuff to container..."; } || echo -n
+  [[ ${clean} -eq 1 ]] && [[ ${attach} -eq 1 ]] && { __echo "ERROR" "-c and -a options cannot be used together!"; return; }
+
+  [[ ${ATTACH_NVIDIA} -eq 1 ]] && { __run -t "Initializing CUDA" _nvidia_cuda_init; __args+=($(_add_nvidia_mounts)); } || echo -n
 
   verify_requested_resources
   if [[ ${LIMITS[CPU]%.*} -ne 0 ]]; then 
     local total_cores=$(($(nproc) - 1))
     local min_core=$((total_cores - (LIMITS[CPU] - 1)))
-    local limits_cpu="--cpuset-cpus=${min_core}-${total_cores}"; echo -e "CPU cores set:\n- ${min_core}-${total_cores} (${LIMITS[CPU]} cores)"
+    __args+=("--cpuset-cpus=${min_core}-${total_cores}"); echo -e "CPU cores set:\n- ${min_core}-${total_cores} (${LIMITS[CPU]} cores)"
   fi
 
   if [[ ${LIMITS[CPU]%.*} -ne 0 ]]; then 
     echo -e "MEMORY limits:\n- ${LIMITS[MEMORY]}"
-    local limits_mem="--memory=${LIMITS[MEMORY]}G"
+    __args+=("--memory=${LIMITS[MEMORY]}G")
   fi
 
   echo "LXC-FS extension is installed: "
-  [[ "${IS_LXCFS_ENABLED}" -eq 1 ]] && { local lxcfs_mounts=${LXC_FS_OPTS[*]}; echo "- YES"; } || { echo "- NO"; }
+  [[ "${IS_LXCFS_ENABLED}" -eq 1 ]] && { __args+=(${LXC_FS_OPTS[*]}); echo "- YES"; } || { echo "- NO"; }
 
   echo "SystemD enabled container:"
   if [[ ${ATTACH_SYSTEMD} -eq 1 ]]; then 
@@ -169,14 +159,14 @@ do_start() {
     [[ ! -d "${_src_dir}" ]] && mkdir -p "${_src_dir}" 1>/dev/null 2>&1
     [[ -n ${share[2]} ]] && [[ "${share[2]}" == "ro" ]] && { local _opts=":ro"; local _opts_text="[read-only]"; }
 
-    local volumes="${volumes}-v ${_src_dir}:${share[1]}${_opts} "; echo " - ${_src_dir} => ${share[1]} ${_opts_text}"
+    __args+=("-v ${_src_dir}:${share[1]}${_opts}"); echo " - ${_src_dir} => ${share[1]} ${_opts_text}"
   done
   
   echo "Container devices:"
   for v in "${DEVICES[@]}"; do
     # shellcheck disable=SC2206
     [[ "${v}" == "" ]] && { echo " - no devices"; continue; }
-    local devices="${devices}--device ${v} "; echo " - ${v}"
+    __args+=("--device ${v}"); echo " - ${v}"
   done
 
   echo "Environment variables:"
@@ -184,30 +174,30 @@ do_start() {
     # shellcheck disable=SC2206
     local _env=("${v%%=*}" "${v#*=}")
     [[ "${_env[0]}" == "" ]] && { echo " - no variables"; continue; }
-    local envi="${envi}-e ${_env[0]}='${_env[1]}' "; echo " - ${_env[0]} = '${_env[1]}'"
+    __args+=("-e ${_env[0]}='${_env[1]}'"); echo " - ${_env[0]} = '${_env[1]}'"
   done
 
   echo "Container CAPS:"
   if [[ ${CAPS_PRIVILEGED} -eq 0 ]]; then
     for v in "${CONTAINER_CAPS[@]}"; do
       [[ "${v}" == "" ]] && { echo " - no CAPS"; continue; }
-      local caps="${caps}--cap-add ${v} "; echo " - ${v}"
+      __args+=("--cap-add ${v}"); echo " - ${v}"
     done
   else 
-    local caps="--privileged";  echo " - privileged mode"
+    __args+=("--privileged");  echo " - privileged mode"
   fi
 
   # network 
-  [[ "${IP}" == "host" ]] && { local _net_argument="--net=host"; } || { local _net_argument="--ip=${IP}"; }
+  [[ "${IP}" == "host" ]] && __args+=("--net=host") || __args+=("--ip=${IP}")
 
   # NS Isolation
   echo -n "NS_USER mapping: "
   if [[ "${NS_USER}" == "keep-id" ]]; then
-    local __ns_arguments="";  echo "none"
+    echo "none"
   elif [[ "${NS_USER:0:1}" == "@" ]]; then 
-    local __ns_arguments="--user=${NS_USER:1}";  echo "run as user"
+    __args+=("--user=${NS_USER:1}");  echo "run as user"
   else
-    local __ns_arguments="--subuidname=${NS_USER} --subgidname=${NS_USER}"; echo "uid and gid mapping"
+    __args+=("--subuidname=${NS_USER}" "--subgidname=${NS_USER}"); echo "uid and gid mapping"
   fi
 
   echo -e "Container IP:\n - ${IP}"
@@ -233,26 +223,21 @@ do_start() {
 
   # shellcheck disable=SC2206
   local _args=(
-  "${CONTAINER_BIN}" "${action}" ${limits_cpu} ${limits_mem}\
-    ${__ns_arguments}\
+  "${CONTAINER_BIN}" "${action}"\
     --name "${APPLICATION}"\
     --hostname "${APP_HOSTNAME}"\
-    ${caps}\
-    ${devices}\
     ${it_options}\
-    ${bin_options}\
-    ${_net_argument}\
-    ${lxcfs_mounts}\
-    ${envi}\
-    ${volumes}\
-    ${nvidia_args}\
-    "localhost/${APPLICATION}:${ver}"
+    ${bin_options}
   )
+
+  _args+=(${__args[*]})
 
   if [[ -n "${custom_container_command}" ]]; then
     # shellcheck disable=SC2206
-    local _args+=(${custom_container_command})
+    _args+=(${custom_container_command})
   fi
+
+  _args+=("localhost/${APPLICATION}:${ver}")
 
   # shellcheck disable=SC2086,SC2068
   __run ${_run_option} -s -o -t "Creating and starting container" ${_args[@]}
@@ -296,11 +281,17 @@ do_build() {
   local -n flags=$1
   local ver=${flags[VER]}
   local _clean_flag=${flags[CLEAN]}
-  local _build_args=""
-  local volumes=""
+
+  BUILD_ARGS+=("APP_VER=${ver}")
+
+  local __args=(
+    "${CONTAINER_BIN}" "build"
+  )
+
+  [[ -f container/Dockerfile ]] &&  __args+=("--format" "docker")
 
   if [[ ${_clean_flag} -eq 1 ]]; then
-    local _build_args+="--rm --force-rm --no-cache --pull-always"
+    __args+=("--rm" "--force-rm" "--no-cache" "--pull-always")
     if ${CONTAINER_BIN} image exists "localhost/${APPLICATION}:${ver}"; then
       __run -s -t "Removing already existing \"localhost/${APPLICATION}:${ver}\" ..." ${CONTAINER_BIN} rmi -if "localhost/${APPLICATION}:${ver}"
     fi
@@ -310,11 +301,8 @@ do_build() {
   for v in "${BUILD_ARGS[@]}"; do
     # shellcheck disable=SC2206
     local _args=(${v//=/ })
-    if [[ "${_args[0]}" == "" ]]; then
-      echo " - no build args"
-      continue
-    fi
-    local _build_args="${_build_args}--build-arg ${_args[0]}=${_args[1]} "
+    [[ "${_args[0]}" == "" ]] && { continue; }
+    __args+=("--build-arg" "${_args[0]}=${_args[1]}")
     echo " - ${_args[0]} = ${_args[1]}"
   done
 
@@ -330,11 +318,28 @@ do_build() {
     [[ ! -d "${_src_dir}" ]] && mkdir -p "${_src_dir}" 1>/dev/null 2>&1
     [[ -n ${share[2]} ]] && [[ "${share[2]}" == "ro" ]] && { local _opts=":ro"; local _opts_text="[read-only]"; }
 
-    local volumes="${volumes}-v ${_src_dir}:${share[1]}${_opts} "; echo " - ${_src_dir} => ${share[1]} ${_opts_text}"
+    __args+=("-v" "${_src_dir}:${share[1]}${_opts}"); echo " - ${_src_dir} => ${share[1]} ${_opts_text}"
   done
   
+  __args+=("-t" "localhost/${APPLICATION}:${ver}" "container")
   # shellcheck disable=SC2086
-  ${CONTAINER_BIN} build --format docker ${volumes} --build-arg APP_VER="${VER}" ${_build_args} -t "localhost/${APPLICATION}:${ver}" container
+  local _start_time=$(date +%s.%N)
+  echo
+  echo -e "${_COLOR[INFO]}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~${_COLOR[GRAY]}"
+  __run -t "Building image" -s -o --stream "${__args[@]}"
+  local _stop_time=$(date +%s.%N)
+
+  dt=$(echo "${_stop_time} - ${_start_time}" | bc)
+  dd=$(echo "$dt/86400" | bc)
+  dt2=$(echo "$dt-86400*$dd" | bc)
+  dh=$(echo "$dt2/3600" | bc)
+  dt3=$(echo "$dt2-3600*$dh" | bc)
+  dm=$(echo "$dt3/60" | bc)
+  ds=$(echo "$dt3-60*$dm" | bc)
+  echo -e "${_COLOR[INFO]}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  echo -ne "${_COLOR[DARKPINK]}[>>>>]${_COLOR[INFO]} Done, build time: ${_COLOR[RED]}"
+  LC_NUMERIC=C printf "%d:%02d:%02d:%02.4f\n" "${dd}" "${dh}" "${dm}" "${ds}"
+  echo -ne "${_COLOR[RESET]}"
 }
 
 do_init(){
