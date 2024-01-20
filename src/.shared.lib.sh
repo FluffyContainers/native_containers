@@ -166,7 +166,7 @@ __echo() {
 
 __ask() {
     local _title="${1}"
-    [[ -n ${FORCE} ]] && [[ "${FORCE}" == "1" ]] && echo "${1} (y/N): y (env variable)" || read -rep "${1} (y/N): " answer < /dev/tty
+    [[ -n ${FORCE} ]] && [[ "${FORCE}" == "1" ]] && { echo "${1} (y/N): y (env variable)"; return 0; } || read -rep "${1} (y/N): " answer < /dev/tty
     if [[ "${answer}" != "y" ]]; then
       __echo "error" "Action cancelled by the user"
       return 1
